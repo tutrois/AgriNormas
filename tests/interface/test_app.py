@@ -52,6 +52,12 @@ MENSAGEM_INESPERADA = (
     "Ocorreu um erro inesperado. Tente novamente. Se o problema continuar, avise a equipe."
 )
 LIMITE_PERGUNTA = 500
+CLASSE_RESPOSTA = "agrinormas-resposta"
+TITULO_RESPOSTA = "Resposta"
+# Texto do núcleo passa por escape de Markdown antes de st.info e st.warning: cada "." vira "\."
+MENSAGEM_SEM_EVIDENCIA_ESCAPADA = MENSAGEM_SEM_EVIDENCIA.replace(".", "\\.")
+MENSAGEM_PERGUNTA_VAZIA_ESCAPADA = MENSAGEM_PERGUNTA_VAZIA.replace(".", "\\.")
+MENSAGEM_PERGUNTA_LONGA_ESCAPADA = MENSAGEM_PERGUNTA_LONGA.replace(".", "\\.")
 
 
 class AssistenteFalso:
@@ -136,6 +142,17 @@ def _valores(elementos: Any) -> list[str]:
     return [str(elemento.value) for elemento in elementos]
 
 
+def _respostas_em_html(at: AppTest) -> list[str]:
+    """Blocos HTML que contêm a resposta (texto puro). Não inclui o CSS da página."""
+    return [
+        valor for valor in _valores(at.html) if valor.startswith(f'<div class="{CLASSE_RESPOSTA}"')
+    ]
+
+
+def _css_da_pagina(at: AppTest) -> str:
+    return "\n".join(valor for valor in _valores(at.html) if "<style>" in valor)
+
+
 def _conteudo_da_arvore(no: Any) -> str:
     """Todo o conteúdo renderizado por um nó e pelos filhos, para checar ausências (ex.: a chave).
 
@@ -175,13 +192,25 @@ def test_estado_inicial_nao_mostra_resposta_nem_aviso(montagens: Montagens) -> N
     assert len(at.error) == 0
     assert len(at.expander) == 0
     assert len(at.text) == 0
+    assert _respostas_em_html(at) == []
+    assert len(at.header) == 0
+
+
+def test_campo_de_pergunta_tem_rotulo_e_texto_de_ajuda(montagens: Montagens) -> None:
+    at = _abrir()
+
+    assert at.text_input[0].label == ROTULO_PERGUNTA
+    assert at.text_input[0].proto.help.strip() != ""
 
 
 def test_enviar_pergunta_mostra_resposta_e_fontes(montagens: Montagens) -> None:
     at = _perguntar(_abrir(), "Qual é o prazo de entrega?")
 
     assert not at.exception
-    assert [texto.value for texto in at.text] == ["Resposta para: Qual é o prazo de entrega?"]
+    assert _valores(at.header) == [TITULO_RESPOSTA]
+    assert _respostas_em_html(at) == [
+        f'<div class="{CLASSE_RESPOSTA}">Resposta para: Qual é o prazo de entrega?</div>'
+    ]
     assert [expansor.label for expansor in at.expander] == [ROTULO_EXPANSOR]
     # Os caracteres de formatação do Markdown são escapados (os códigos vêm dos PDFs).
     corpo_esperado = (
@@ -217,12 +246,102 @@ def test_texto_da_resposta_nao_vira_link_nem_imagem(montagens: Montagens) -> Non
     at = _perguntar(_abrir(), "Qual é o prazo de entrega?")
 
     assert not at.exception
-    # O texto aparece literal, como texto puro.
-    assert TEXTO_COM_MARKDOWN in _valores(at.text)
-    # Nenhum bloco Markdown da página contém o link ou a imagem da resposta.
+    # O texto aparece literal, escapado em HTML: os colchetes e parênteses continuam texto.
+    respostas = _respostas_em_html(at)
+    assert respostas == [
+        f'<div class="{CLASSE_RESPOSTA}">'
+        "Veja [x](http://exemplo.invalido) e a imagem ![](http://exemplo.invalido/i.png)."
+        "</div>"
+    ]
+    # Nenhum elemento de link ou imagem é criado pela resposta.
+    assert not any("<a " in bloco or "<img" in bloco for bloco in _valores(at.html))
+    # Os blocos Markdown da página são a descrição e a fonte, nunca o texto da resposta.
     blocos_markdown = _valores(at.markdown)
     assert not any("exemplo.invalido" in bloco for bloco in blocos_markdown)
     assert not any("](" in bloco or "![" in bloco for bloco in blocos_markdown)
+
+
+def test_recusa_com_markdown_do_nucleo_recebe_escape(montagens: Montagens) -> None:
+    # AppTest não renderiza Markdown. Este teste prova só o escape do texto passado a `st.info`:
+    # a forma renderizada (link, imagem, autolink) não é verificada aqui. O autolink de URL e
+    # e-mail continua aberto na M-59 do backlog e é medido no navegador (ver o checklist).
+    montagens.assistente.resposta = Resposta(texto=TEXTO_COM_MARKDOWN, evidencia_suficiente=False)
+
+    at = _perguntar(_abrir(), "Qual é a cor do uniforme?")
+
+    assert not at.exception
+    valores = _valores(at.info)
+    assert len(valores) == 1
+    # O texto passado a `st.info` tem os colchetes, parênteses e o `!` escapados.
+    assert "\\[x\\]\\(http://exemplo\\.invalido\\)" in valores[0]
+    assert "](" not in valores[0]
+    assert "![" not in valores[0]
+
+
+def test_resposta_com_html_vira_texto_escapado(montagens: Montagens) -> None:
+    montagens.assistente.texto = '<img src="x" onerror="alert(1)"><b>negrito</b> & "aspas"'
+
+    at = _perguntar(_abrir(), "Qual é o prazo de entrega?")
+
+    assert not at.exception
+    assert _respostas_em_html(at) == [
+        f'<div class="{CLASSE_RESPOSTA}">'
+        "&lt;img src=&quot;x&quot; onerror=&quot;alert(1)&quot;&gt;"
+        "&lt;b&gt;negrito&lt;/b&gt; &amp; &quot;aspas&quot;"
+        "</div>"
+    ]
+    assert not any("<img" in bloco or "<b>" in bloco for bloco in _valores(at.html))
+
+
+def test_resposta_preserva_quebras_de_linha(montagens: Montagens) -> None:
+    montagens.assistente.texto = "Primeira linha.\nSegunda linha."
+
+    at = _perguntar(_abrir(), "Qual é o prazo de entrega?")
+
+    assert _respostas_em_html(at) == [
+        f'<div class="{CLASSE_RESPOSTA}">Primeira linha.\nSegunda linha.</div>'
+    ]
+    assert "white-space: pre-wrap" in _css_da_pagina(at)
+
+
+def test_layout_estreito_tem_margem_de_16_pixels_e_quebra_de_linha(
+    montagens: Montagens,
+) -> None:
+    at = _abrir()
+
+    css = _css_da_pagina(at)
+    assert "@media (max-width: 640px)" in css
+    assert "padding-left: 16px" in css
+    assert "padding-right: 16px" in css
+    assert "overflow-wrap: anywhere" in css
+
+
+def test_conteudo_das_fontes_quebra_palavras_longas_no_expansor(montagens: Montagens) -> None:
+    css = _css_da_pagina(_abrir())
+
+    seletor = '[data-testid="stExpander"] [data-testid="stMarkdownContainer"] {'
+    assert seletor in css
+    bloco = css.split(seletor)[1].split("}")[0]
+    assert "overflow-wrap: anywhere" in bloco
+
+
+def test_css_da_pagina_nao_carrega_recursos_externos(montagens: Montagens) -> None:
+    css = _css_da_pagina(_abrir())
+
+    assert "<style>" in css
+    assert "url(" not in css
+    assert "@import" not in css
+
+
+def test_titulo_da_resposta_e_nivel_2_sem_pular_do_titulo_da_pagina(
+    montagens: Montagens,
+) -> None:
+    at = _perguntar(_abrir(), "Qual é o prazo de entrega?")
+
+    assert not at.exception
+    assert len(at.title) == 1
+    assert _valores(at.header) == [TITULO_RESPOSTA]
+    assert len(at.subheader) == 0
 
 
 def test_sem_evidencia_mostra_aviso_informativo_sem_fontes(montagens: Montagens) -> None:
@@ -231,9 +350,11 @@ def test_sem_evidencia_mostra_aviso_informativo_sem_fontes(montagens: Montagens)
     at = _perguntar(_abrir(), "Qual é a cor do uniforme?")
 
     assert not at.exception
-    assert _valores(at.info) == [MENSAGEM_SEM_EVIDENCIA]
+    assert _valores(at.header) == [TITULO_RESPOSTA]
+    assert _valores(at.info) == [MENSAGEM_SEM_EVIDENCIA_ESCAPADA]
     assert len(at.expander) == 0
     assert len(at.text) == 0
+    assert _respostas_em_html(at) == []
     assert len(at.warning) == 0
     assert len(at.error) == 0
 
@@ -245,9 +366,10 @@ def test_pergunta_vazia_mostra_aviso_de_pergunta_invalida(montagens: Montagens) 
     at = _perguntar(_abrir(), "   ")
 
     assert not at.exception
-    assert _valores(at.warning) == [MENSAGEM_PERGUNTA_VAZIA]
+    assert _valores(at.warning) == [MENSAGEM_PERGUNTA_VAZIA_ESCAPADA]
     assert len(at.info) == 0
     assert len(at.error) == 0
+    assert len(at.header) == 0
     assert buscador.perguntas == []
 
 
@@ -262,7 +384,7 @@ def test_pergunta_com_500_caracteres_e_aceita(montagens: Montagens) -> None:
     assert len(at.warning) == 0
     assert len(at.error) == 0
     # O buscador espião não encontra nada: a recusa esperada é a de falta de evidência.
-    assert _valores(at.info) == [MENSAGEM_SEM_EVIDENCIA]
+    assert _valores(at.info) == [MENSAGEM_SEM_EVIDENCIA_ESCAPADA]
     assert buscador.perguntas == [pergunta]
 
 
@@ -275,7 +397,7 @@ def test_pergunta_com_501_caracteres_e_recusada_sem_chamar_a_busca(
     at = _perguntar(_abrir(), "a" * (LIMITE_PERGUNTA + 1))
 
     assert not at.exception
-    assert _valores(at.warning) == [MENSAGEM_PERGUNTA_LONGA]
+    assert _valores(at.warning) == [MENSAGEM_PERGUNTA_LONGA_ESCAPADA]
     assert len(at.info) == 0
     assert len(at.error) == 0
     assert buscador.perguntas == []
@@ -355,7 +477,9 @@ def test_nova_tentativa_depois_de_falha_de_montagem(montagens: Montagens) -> Non
     assert not at.exception
     assert montagens.chamadas == 2
     assert len(at.error) == 0
-    assert _valores(at.text) == ["Resposta para: Qual é o prazo de entrega?"]
+    assert _respostas_em_html(at) == [
+        f'<div class="{CLASSE_RESPOSTA}">Resposta para: Qual é o prazo de entrega?</div>'
+    ]
 
 
 def test_erro_inesperado_mostra_mensagem_generica_e_registra_no_log(
