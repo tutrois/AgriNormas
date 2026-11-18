@@ -13,7 +13,11 @@ import numpy as np
 import pytest
 
 from busca.cache import EntradaCache, RepositorioCacheVetores, hash_texto
-from busca.indexacao import construir_indice_com_cache, texto_indexavel
+from busca.indexacao import (
+    MENSAGEM_CACHE_DIMENSAO_DIVERGENTE,
+    construir_indice_com_cache,
+    texto_indexavel,
+)
 from nucleo.erros import ErroBusca
 from nucleo.modelos import Secao, Vetor
 
@@ -357,3 +361,142 @@ def test_provedor_que_devolve_quantidade_errada_levanta_erro_de_busca(tmp_path: 
             repositorio=repositorio,
         )
     assert repositorio.ler(MODELO) == {}
+
+
+# Dimensão do cache diferente da do provedor (M-29)
+
+
+class ProvedorComDimensao:
+    """Provedor falso que devolve vetores de dimensão escolhida e conta os pedidos."""
+
+    def __init__(self, dimensao: int) -> None:
+        self._dimensao = dimensao
+        self.textos_enviados: list[tuple[str, ...]] = []
+
+    @property
+    def chamadas(self) -> int:
+        return len(self.textos_enviados)
+
+    def gerar(self, textos: Sequence[str]) -> tuple[Vetor, ...]:
+        self.textos_enviados.append(tuple(textos))
+        return tuple(tuple(float(indice + 1) for indice in range(self._dimensao)) for _ in textos)
+
+
+class ProvedorQueMudaDeDimensaoEntrePedidos:
+    """Primeiro pedido devolve dimensão 5; o segundo mistura dimensões 2 e 3."""
+
+    def __init__(self) -> None:
+        self.chamadas = 0
+
+    def gerar(self, textos: Sequence[str]) -> tuple[Vetor, ...]:
+        self.chamadas += 1
+        if self.chamadas == 1:
+            return tuple((1.0,) * 5 for _ in textos)
+        return tuple((1.0,) * (2 + indice) for indice in range(len(textos)))
+
+
+def test_documento_novo_com_mesma_dimensao_reaproveita_o_cache(tmp_path: Path) -> None:
+    repositorio = _repositorio(tmp_path)
+    doc_a = [_secao("FIN-POL-001", "1")]
+    doc_b = [_secao("FRO-POL-002", "1")]
+    construir_indice_com_cache(
+        doc_a, ProvedorComDimensao(3), modelo=MODELO, repositorio=repositorio
+    )
+    provedor = ProvedorComDimensao(3)
+
+    indice = construir_indice_com_cache(
+        doc_a + doc_b, provedor, modelo=MODELO, repositorio=repositorio
+    )
+
+    assert provedor.textos_enviados == [(texto_indexavel(doc_b[0]),)]
+    assert len(repositorio.ler(MODELO)) == 2
+    assert [trecho.secao for trecho in indice.buscar((1.0, 2.0, 3.0), 2)] == doc_a + doc_b
+
+
+def test_vetores_novos_de_outra_dimensao_descartam_o_cache_e_regravam(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    repositorio = _repositorio(tmp_path)
+    doc_a = [_secao("FIN-POL-001", "1")]
+    doc_b = [_secao("FRO-POL-002", "1")]
+    construir_indice_com_cache(
+        doc_a, ProvedorComDimensao(3), modelo=MODELO, repositorio=repositorio
+    )
+    provedor = ProvedorComDimensao(5)
+
+    indice = construir_indice_com_cache(
+        doc_a + doc_b, provedor, modelo=MODELO, repositorio=repositorio
+    )
+
+    # Primeiro pedido só com o texto novo; ao ver a dimensão 5, recalcula tudo em outro pedido.
+    assert provedor.textos_enviados == [
+        (texto_indexavel(doc_b[0]),),
+        (texto_indexavel(doc_a[0]), texto_indexavel(doc_b[0])),
+    ]
+    assert MENSAGEM_CACHE_DIMENSAO_DIVERGENTE in caplog.text
+    lidos = repositorio.ler(MODELO)
+    assert len(lidos) == 2
+    assert {len(vetor) for vetor in lidos.values()} == {5}
+    assert sorted(arquivo.name for arquivo in (tmp_path / "dados").iterdir()) == ["indice.npz"]
+    assert len(indice.buscar((1.0, 2.0, 3.0, 4.0, 5.0), 2)) == 2
+
+
+def test_inicializacao_seguinte_ao_recalculo_nao_erra_nem_chama_o_provedor(tmp_path: Path) -> None:
+    repositorio = _repositorio(tmp_path)
+    doc_a = [_secao("FIN-POL-001", "1")]
+    doc_b = [_secao("FRO-POL-002", "1")]
+    construir_indice_com_cache(
+        doc_a, ProvedorComDimensao(3), modelo=MODELO, repositorio=repositorio
+    )
+    construir_indice_com_cache(
+        doc_a + doc_b, ProvedorComDimensao(5), modelo=MODELO, repositorio=repositorio
+    )
+    provedor = ProvedorComDimensao(5)
+
+    indice = construir_indice_com_cache(
+        doc_a + doc_b, provedor, modelo=MODELO, repositorio=repositorio
+    )
+
+    assert provedor.chamadas == 0
+    assert len(indice.buscar((1.0, 2.0, 3.0, 4.0, 5.0), 2)) == 2
+
+
+def test_recalculo_com_dimensoes_divergentes_levanta_erro_e_preserva_o_cache_antigo(
+    tmp_path: Path,
+) -> None:
+    repositorio = _repositorio(tmp_path)
+    doc_a = [_secao("FIN-POL-001", "1")]
+    doc_b = [_secao("FRO-POL-002", "1")]
+    construir_indice_com_cache(
+        doc_a, ProvedorComDimensao(3), modelo=MODELO, repositorio=repositorio
+    )
+
+    with pytest.raises(ErroBusca):
+        construir_indice_com_cache(
+            doc_a + doc_b,
+            ProvedorQueMudaDeDimensaoEntrePedidos(),
+            modelo=MODELO,
+            repositorio=repositorio,
+        )
+
+    lidos = repositorio.ler(MODELO)
+    assert len(lidos) == 1
+    assert {len(vetor) for vetor in lidos.values()} == {3}
+
+
+def test_sem_textos_novos_cache_de_outra_dimensao_so_falha_na_consulta_m29(tmp_path: Path) -> None:
+    # Limitação registrada na M-29: sem vetores novos não há dimensão do provedor para comparar,
+    # e a montagem não pode chamar o provedor (critério da HIST-012). O teste fixa o
+    # comportamento atual. Se a limitação for fechada, este teste deve mudar junto.
+    repositorio = _repositorio(tmp_path)
+    doc_a = [_secao("FIN-POL-001", "1")]
+    construir_indice_com_cache(
+        doc_a, ProvedorComDimensao(3), modelo=MODELO, repositorio=repositorio
+    )
+    provedor = ProvedorComDimensao(5)
+
+    indice = construir_indice_com_cache(doc_a, provedor, modelo=MODELO, repositorio=repositorio)
+
+    assert provedor.chamadas == 0
+    with pytest.raises(ErroBusca):
+        indice.buscar((1.0, 2.0, 3.0, 4.0, 5.0), 1)

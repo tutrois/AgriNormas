@@ -6,7 +6,8 @@ mesmo texto na calibração, nos testes e na composição mantém as pontuaçõe
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import logging
+from collections.abc import Mapping, Sequence
 
 from busca.cache import EntradaCache, RepositorioCacheVetores, hash_texto
 from busca.indice_memoria import IndiceEmMemoria
@@ -14,11 +15,16 @@ from nucleo.contratos import ProvedorEmbedding
 from nucleo.erros import ErroBusca
 from nucleo.modelos import Secao, Vetor
 
+logger = logging.getLogger(__name__)
+
 MENSAGEM_QUANTIDADE_VETORES_DIVERGENTE = (
     "O provedor de embeddings devolveu uma quantidade de vetores diferente da pedida."
 )
 MENSAGEM_DIMENSAO_DIVERGENTE_NOVOS = (
     "O provedor de embeddings devolveu vetores de dimensões diferentes; o cache não foi gravado."
+)
+MENSAGEM_CACHE_DIMENSAO_DIVERGENTE = (
+    "Vetores do cache têm dimensão diferente da do provedor; o cache será recalculado."
 )
 
 
@@ -57,6 +63,16 @@ def construir_indice_com_cache(
     único pedido. Ao final o cache é regravado com os chunks atuais, então vetores de
     documentos removidos ou alterados saem do disco.
 
+    Se os vetores novos têm dimensão diferente da do cache (M-29), o cache é descartado e
+    todos os chunks são recalculados em um segundo pedido, e a regravação substitui o cache
+    antigo. Se esse segundo pedido também falhar, o cache antigo fica intacto.
+
+    Limite conhecido: `construir_indice_com_cache` não compara a dimensão quando não há
+    textos novos. Sem textos novos o cache é usado como está, sem chamar o provedor (critério
+    da HIST-012). Nesse caso, uma divergência de dimensão entre o cache e o provedor não é
+    detectada aqui e aparece na consulta como `ErroBusca`. A composição trata essa situação
+    descartando e reconstruindo o índice (ver `src/composicao.py`, `_BuscadorComReconstrucao`).
+
     Sem seções, devolve o índice vazio e grava cache vazio, sem chamar o provedor (ADR-007).
     """
     if not secoes:
@@ -65,20 +81,19 @@ def construir_indice_com_cache(
 
     textos = tuple(texto_indexavel(secao) for secao in secoes)
     hashes = tuple(hash_texto(texto) for texto in textos)
+    hashes_unicos = tuple(dict.fromkeys(hashes))
+    textos_por_hash = dict(zip(hashes, textos, strict=True))
     vetores_conhecidos = repositorio.ler(modelo)
 
-    textos_por_hash = dict(zip(hashes, textos, strict=True))
-    hashes_novos = tuple(
-        hash_ for hash_ in dict.fromkeys(hashes) if hash_ not in vetores_conhecidos
-    )
+    faltantes = tuple(hash_ for hash_ in hashes_unicos if hash_ not in vetores_conhecidos)
     vetores_por_hash: dict[str, Vetor] = dict(vetores_conhecidos)
-    if hashes_novos:
-        novos = provedor.gerar(tuple(textos_por_hash[hash_] for hash_ in hashes_novos))
-        if len(novos) != len(hashes_novos):
-            raise ErroBusca(MENSAGEM_QUANTIDADE_VETORES_DIVERGENTE)
-        if len({len(vetor) for vetor in novos}) > 1:
-            raise ErroBusca(MENSAGEM_DIMENSAO_DIVERGENTE_NOVOS)
-        vetores_por_hash.update(zip(hashes_novos, novos, strict=True))
+    if faltantes:
+        gerados = _gerar_validado(provedor, faltantes, textos_por_hash)
+        if vetores_conhecidos and _dimensao(gerados) != _dimensao(vetores_conhecidos):
+            logger.warning(MENSAGEM_CACHE_DIMENSAO_DIVERGENTE)
+            vetores_por_hash = {}
+            gerados = _gerar_validado(provedor, hashes_unicos, textos_por_hash)
+        vetores_por_hash.update(gerados)
 
     vetores = [vetores_por_hash[hash_] for hash_ in hashes]
     indice = IndiceEmMemoria()
@@ -90,3 +105,25 @@ def construir_indice_com_cache(
         )
     )
     return indice
+
+
+def _gerar_validado(
+    provedor: ProvedorEmbedding,
+    hashes: Sequence[str],
+    textos_por_hash: Mapping[str, str],
+) -> dict[str, Vetor]:
+    """Pede ao provedor os textos dos `hashes`, em um pedido, e valida a resposta.
+
+    Recusa quantidade diferente da pedida e vetores de dimensões diferentes entre si.
+    """
+    novos = provedor.gerar(tuple(textos_por_hash[hash_] for hash_ in hashes))
+    if len(novos) != len(hashes):
+        raise ErroBusca(MENSAGEM_QUANTIDADE_VETORES_DIVERGENTE)
+    if len({len(vetor) for vetor in novos}) > 1:
+        raise ErroBusca(MENSAGEM_DIMENSAO_DIVERGENTE_NOVOS)
+    return dict(zip(hashes, novos, strict=True))
+
+
+def _dimensao(vetores_por_hash: Mapping[str, Vetor]) -> int:
+    """Dimensão comum dos vetores. Só chamada com mapa não vazio e de dimensão homogênea."""
+    return len(next(iter(vetores_por_hash.values())))
