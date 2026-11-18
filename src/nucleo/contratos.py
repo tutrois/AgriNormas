@@ -28,10 +28,15 @@ class LeitorDocumento(Protocol):
 class Chunker(Protocol):
     """Divide o texto limpo de um documento em seções indexáveis."""
 
-    def dividir(self, codigo: str, texto: str) -> tuple[Secao, ...]:
+    def dividir(self, codigo: str, paginas: Sequence[tuple[int, str]]) -> tuple[Secao, ...]:
         """Devolve as seções na ordem em que aparecem no documento.
 
-        Texto vazio devolve `()` (ADR-007).
+        `paginas` são os pares `(numero_da_pagina, texto)` produzidos por `limpar_paginas`,
+        na ordem do documento. Cada `Secao` recebe em `pagina` o número da página em que a
+        seção começa. Pares com texto vazio são ignorados.
+
+        Sem texto para dividir (sequência vazia ou só com textos vazios) devolve `()` (ADR-007).
+        Ver ADR-008 para a escolha desta assinatura.
         """
         ...
 
