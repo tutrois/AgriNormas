@@ -1,0 +1,51 @@
+# Ambiente e segredos
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+*.env.local
+.streamlit/secrets.toml
+
+# Caches de ferramentas
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+
+# Cobertura de testes
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Build e distribuição
+build/
+dist/
+*.egg-info/
+
+# Cache de índice gerado em tempo de execução (pode ser recriado)
+dados/
+
+# Logs e arquivos temporários
+*.log
+logs/
+*.tmp
+
+# Planejamento e material do desafio: não versionados (backlog e .pptx do desafio).
+# Versionados: a base de conhecimento (base_conhecimento/) e a documentação em docs/
+# (arquitetura, ADRs e roteiro de demonstração).
+planejamento/
+
+# Agentes e fluxo de desenvolvimento (ferramenta local)
+.claude/
+
+# Sistema operacional e editores
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.code-workspace
