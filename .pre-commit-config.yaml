@@ -1,0 +1,8 @@
+# Hooks locais de qualidade (HIST-024). Instale o hook uma vez com: pre-commit install
+# A versão do ruff-pre-commit deve ser a mesma do requirements.txt (ruff==0.17.5).
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.5
+    hooks:
+      - id: ruff-check
+      - id: ruff-format
