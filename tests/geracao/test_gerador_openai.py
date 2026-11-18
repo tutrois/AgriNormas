@@ -23,6 +23,7 @@ from geracao.gerador_openai import (
     MODELO_PADRAO,
     GeradorOpenAI,
 )
+from geracao.prompts import PROMPT_SISTEMA
 from nucleo.erros import ConfiguracaoInvalida, ErroGeracao
 from nucleo.modelos import Resposta, Secao, Trecho
 
@@ -126,9 +127,19 @@ def test_chamada_usa_modelo_padrao_temperatura_zero_e_trechos_identificados() ->
     assert chamada["model"] == MODELO_PADRAO == "gpt-4o-mini"
     assert chamada["temperature"] == 0.0
     conteudo_usuario = chamada["messages"][1]["content"]
-    assert "[FIN-POL-001 §6]" in conteudo_usuario
+    assert 'id="FIN-POL-001 §6"' in conteudo_usuario
     assert TEXTO_TRECHO in conteudo_usuario
     assert PERGUNTA in conteudo_usuario
+
+
+def test_mensagem_de_sistema_e_o_prompt_versionado() -> None:
+    cliente = ClienteSimulado([_resposta_chat("Resposta.")])
+
+    _gerador(cliente).gerar(PERGUNTA, [_trecho()])
+
+    mensagem_sistema = cliente.chamadas[0]["messages"][0]
+    assert mensagem_sistema["role"] == "system"
+    assert mensagem_sistema["content"] == PROMPT_SISTEMA
 
 
 def test_conteudo_vazio_do_modelo_devolve_sem_evidencia() -> None:
