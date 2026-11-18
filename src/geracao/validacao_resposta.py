@@ -47,7 +47,18 @@ MOTIVO_TEXTO_DIZ_SEM_EVIDENCIA = "texto diz não haver evidência, com a flag de
 
 MODELO_LOG_RECUSA = "Saída do modelo recusada: %s."
 
-FRASE_SEM_EVIDENCIA = "nao ha evidencia"
+# Frases já normalizadas (sem acento, minúsculas, espaços simples), comparadas com o texto
+# normalizado. Se qualquer uma aparecer com a flag de evidência verdadeira, a resposta é recusada.
+FRASES_NEGACAO_EVIDENCIA: tuple[str, ...] = (
+    "nao ha evidencia",
+    "nao encontrei evidencia",
+    "nao existe evidencia",
+    "nao foi encontrada evidencia",
+    "nao ha informacao",
+    "nao encontrei informacao",
+    "nao existe informacao",
+    "nao foi encontrada informacao",
+)
 PADRAO_CITACAO_NO_TEXTO = re.compile(r"\[([^\[\]]*§[^\[\]]*)\]")
 PADRAO_SEPARADOR_SECAO = re.compile(r"\s*§\s*")
 
@@ -168,7 +179,8 @@ def _normalizar_identificador(texto: str) -> str:
 
 
 def _diz_nao_ha_evidencia(texto: str) -> bool:
-    return FRASE_SEM_EVIDENCIA in _normalizar(texto)
+    normalizado = _normalizar(texto)
+    return any(frase in normalizado for frase in FRASES_NEGACAO_EVIDENCIA)
 
 
 def _normalizar(texto: str) -> str:
