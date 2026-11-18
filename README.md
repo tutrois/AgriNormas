@@ -31,17 +31,17 @@ Assistente que responde perguntas em linguagem natural com base nas normativas i
 
 | Área | Situação |
 |---|---|
-| Ambiente, dependências e estrutura de pacotes (HIST-001) | Concluído |
-| Configuração validada (HIST-002) | Concluído |
-| Contratos e modelos de domínio (HIST-003) | Concluído |
-| Leitura, limpeza e chunking dos PDFs (EP-01) | Concluído |
-| Recuperação e limiar de similaridade (EP-02) | Concluído. A busca híbrida foi testada e rejeitada (ver a seção sobre as perguntas 2, 3 e 4) |
-| Geração fundamentada e validação de citações (EP-03) | Aceito com ressalva (ver a seção sobre as perguntas 2, 3 e 4) |
-| Orquestração e composição (EP-04) | Aceito com ressalva |
-| Interface Streamlit (EP-05) | Aceito com ressalvas |
-| Suíte de validação das seis perguntas (EP-06) | Aceito com limitação: perguntas 2, 3 e 4 |
-| Qualidade estática e CI (HIST-024 e HIST-025) | Em andamento |
-| Documentação e entrega (EP-07) | Em andamento |
+| Ambiente, dependências e estrutura de pacotes | Concluído |
+| Configuração validada | Concluído |
+| Contratos e modelos de domínio | Concluído |
+| Leitura, limpeza e divisão dos PDFs | Concluído |
+| Recuperação e limiar de similaridade | Concluído; limitação conhecida nas perguntas 2, 3 e 4 |
+| Geração fundamentada e validação de citações | Aceita com ressalva; limitação conhecida nas perguntas 2, 3 e 4 |
+| Orquestração e composição | Aceita com ressalva |
+| Interface Streamlit | Aceita com ressalvas |
+| Suíte de validação das seis perguntas | Aceita com limitação nas perguntas 2, 3 e 4 |
+| Qualidade estática e CI | Em andamento |
+| Documentação e entrega | Em andamento |
 
 ## Pré-requisitos
 
@@ -61,7 +61,7 @@ py -3.15 -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-Se o PowerShell bloquear a ativação do ambiente, rode uma vez `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` e tente de novo.
+Se o PowerShell bloquear a ativação do ambiente, rode `Set-ExecutionPolicy -Scope Process RemoteSigned` na mesma janela e tente de novo. Com `-Scope Process`, a mudança vale só para a sessão atual.
 
 **Windows (Git Bash):**
 
@@ -118,7 +118,7 @@ Os demais valores já têm padrão no `.env.example`, e um valor vazio usa o pad
 |---|---|---|
 | `MODELO_GERACAO` | `gpt-4o-mini` | Modelo que gera a resposta |
 | `MODELO_EMBEDDING` | `text-embedding-3-small` | Modelo dos embeddings |
-| `LIMIAR_SIMILARIDADE` | `0.60` | Abaixo dele, o trecho é descartado. Calibrado com as seis perguntas de validação |
+| `LIMIAR_SIMILARIDADE` | `0.60` | Abaixo dele, o trecho é descartado. Valor provisório (igual ao `.env.example`). Três das seis perguntas de validação (2, 3 e 4) têm seções de apoio abaixo dele |
 | `TOP_K` | `4` | Número de trechos recuperados por pergunta |
 | `PASTA_DOCUMENTOS` | `base_conhecimento` | Pasta com os PDFs lidos |
 | `TAMANHO_MAXIMO_CHUNK` | `1200` | Tamanho máximo de uma seção indexada |
@@ -153,13 +153,15 @@ python -m ruff format --check .
 python -m mypy
 ```
 
-A suíte offline é o padrão. Casos marcados como `xfail` são falhas conhecidas (ver a seção abaixo), e não quebram a execução. Eles aparecem no resumo do pytest.
+A suíte offline é o padrão. Os casos marcados como `xfail` (falha esperada) são estritos: enquanto a falha existir, eles aparecem no resumo do pytest sem quebrar a execução. Quando o problema for corrigido, o teste passa, o pytest acusa a passagem como erro e a marca `xfail` deve ser removida (ver a seção abaixo).
 
 ### Perguntas de validação
 
 As seis perguntas usadas para validar o assistente, com as respostas de referência, estão em [tests/validacao/perguntas.md](tests/validacao/perguntas.md). A pergunta 6 (limite de combustível por viagem) deve receber a resposta de que **não há evidência nos documentos**.
 
-Na integração com a API real, as perguntas 1, 5 e 6 passam. As perguntas 2, 3 e 4 seguem como `xfail`.
+Na integração com a API real, as perguntas 1, 5 e 6 passam. As perguntas 2, 3 e 4 seguem como `xfail`. Essas medições foram feitas com `TOP_K` 6, valor do `.env` local. Com `TOP_K` 4, que é o padrão do `.env.example`, a pergunta 4 também perde a seção RH-PRO-003 §3.
+
+A pergunta 6 apresenta resultados diferentes entre execuções da integração real. Ela não tem marca de falha esperada, então uma falha nela aparece como erro no teste.
 
 ### Vetores gravados da validação
 
@@ -176,8 +178,8 @@ O script faz um único pedido à API (com as seções e as seis perguntas) e con
 A recuperação não traz hoje todas as seções que sustentam estas respostas, porque elas ficam abaixo do limiar de 0,60:
 
 - **Pergunta 2:** FIN-POL-001 §4 tem cosseno 0,568.
-- **Pergunta 3:** FIN-POL-001 §4 tem cosseno 0,41. Na integração real, a resposta não cita essa seção.
-- **Pergunta 4:** RH-PRO-003 §4 tem cosseno 0,44. Com `TOP_K` 4, o modo offline também deixa de fora a §3.
+- **Pergunta 3:** a seção FIN-POL-001 §4 não é recuperada (cosseno 0,41, abaixo do limiar 0,60), por isso a resposta não a cita.
+- **Pergunta 4:** RH-PRO-003 §4 tem cosseno 0,44. Com `TOP_K` 4, a seção RH-PRO-003 §3 também fica de fora.
 
 As falhas estão marcadas como `xfail` na suíte. Uma busca híbrida (cosseno com BM25) foi testada e não resolveu esses casos, por isso foi descartada. A abordagem para esses casos ainda não foi decidida.
 
@@ -198,7 +200,6 @@ AgriNormas/
 │   └── validacao/         # Perguntas de validação e vetores gravados (versionado)
 ├── scripts/               # Calibração do limiar
 ├── dados/                 # Cache do índice, gerado em execução (não versionado)
-├── .claude/               # Agentes e fluxo de desenvolvimento (não versionado)
 ├── pyproject.toml         # Configuração de ruff, mypy e pytest
 ├── requirements.txt       # Dependências com versões fixadas
 └── .env.example           # Modelo de configuração
@@ -209,7 +210,6 @@ AgriNormas/
 | `base_conhecimento/` | As três políticas em PDF. É a entrada de dados da aplicação, apontada por `PASTA_DOCUMENTOS` no `.env`. | Sim |
 | `tests/validacao/` | Perguntas de validação (`perguntas.md`), fonte única das respostas de referência, e vetores gravados. | Sim |
 | `dados/` | Cache do índice, gerado na execução. | Não |
-| `.claude/` | Agentes e fluxo de desenvolvimento, ferramenta local. | Não |
 
 ## Arquitetura
 
