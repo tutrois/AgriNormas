@@ -1,0 +1,33 @@
+[project]
+name = "agrinormas"
+version = "0.1.0"
+description = "Assistente RAG para consulta de normativas internas, com fontes e aviso de falta de evidência"
+requires-python = ">=3.15"
+
+[tool.ruff]
+line-length = 100
+target-version = "py315"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.mypy]
+python_version = "3.15"
+mypy_path = "src"
+warn_unused_ignores = true
+files = ["src"]
+
+# Núcleo: regras de negócio em modo estrito (HIST-001 / HIST-024)
+[[tool.mypy.overrides]]
+module = ["nucleo", "nucleo.*"]
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+    "integracao: chama a API real da OpenAI; execute com 'pytest -m integracao' e chave no .env",
+]
+# Por padrão, a suíte é offline. Testes de integração só rodam com -m integracao.
+addopts = "-m 'not integracao' --import-mode=importlib"

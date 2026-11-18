@@ -1,0 +1,11 @@
+# Dependências de execução
+openai==3.54.0
+pypdf==7.1.0
+numpy==2.5.5
+streamlit==1.67.0
+python-dotenv==1.2.4
+
+# Ferramentas de desenvolvimento e qualidade
+pytest==9.2.0
+ruff==0.17.5
+mypy==2.4.1
