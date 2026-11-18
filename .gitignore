@@ -34,10 +34,10 @@ dados/
 logs/
 *.tmp
 
-# Planejamento e material do desafio: não versionados (backlog e .pptx do desafio).
-# Versionados: a base de conhecimento (base_conhecimento/) e a documentação em docs/
-# (arquitetura, ADRs e roteiro de demonstração).
+# Planejamento, material do desafio e documentação interna: não versionados.
+# Versionada apenas a base de conhecimento (base_conhecimento/), que a aplicação lê.
 planejamento/
+docs/
 
 # Agentes e fluxo de desenvolvimento (ferramenta local)
 .claude/
