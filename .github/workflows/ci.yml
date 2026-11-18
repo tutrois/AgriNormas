@@ -1,0 +1,88 @@
+# Pipeline de integração contínua (HIST-025).
+# Roda a cada push e em pull requests. Não usa secrets: a suíte de integração (API real
+# da OpenAI, marcador "integracao") não roda aqui, por design.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  segredos:
+    name: Segredos não versionados
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Bloquear .env e padrões de chave de API
+        # Só imprime arquivo e linha, nunca o conteúdo encontrado.
+        # Exclui os prefixos de fixtures de teste (sk-teste-, sk-do-processo).
+        run: |
+          set -eu
+          if git ls-files --error-unmatch .env >/dev/null 2>&1; then
+            echo "::error::o arquivo .env está versionado; remova-o do git"
+            exit 1
+          fi
+          python3 - <<'PY'
+          import re
+          import subprocess
+          import sys
+
+          padrao = re.compile(r"\bsk-[A-Za-z0-9_-]{20,}")
+          fixture = re.compile(r"sk-(teste|do-proc)")
+          arquivos = subprocess.run(
+              ["git", "ls-files", "-z"], capture_output=True, text=True, check=True
+          ).stdout.split("\0")
+          achados = []
+          for arquivo in filter(None, arquivos):
+              try:
+                  with open(arquivo, encoding="utf-8") as origem:
+                      linhas = origem.read().splitlines()
+              except (UnicodeDecodeError, OSError):
+                  continue
+              for numero, linha in enumerate(linhas, start=1):
+                  for achado in padrao.finditer(linha):
+                      if not fixture.match(achado.group()):
+                          achados.append(f"{arquivo}:{numero}")
+          if achados:
+              print("::error::possível chave de API nas linhas: " + ", ".join(achados))
+              sys.exit(1)
+          print("nenhum segredo encontrado nos arquivos versionados")
+          PY
+
+  qualidade:
+    name: Qualidade e testes (sem API real)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Instalar Python 3.15
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.15"
+
+      - name: Instalar dependências
+        run: python -m pip install -r requirements.txt
+
+      - name: Lint e formatação (ruff check)
+        run: python -m ruff check .
+
+      - name: Formatação (ruff format --check)
+        run: python -m ruff format --check .
+
+      - name: Tipos (mypy, estrito em nucleo)
+        run: python -m mypy
+
+      - name: Testes sem integração (pytest)
+        run: python -m pytest -m "not integracao"
