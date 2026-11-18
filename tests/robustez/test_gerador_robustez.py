@@ -14,13 +14,13 @@ import openai
 import pytest
 
 from geracao.gerador_openai import (
-    INSTRUCAO_PROVISORIA,
     MENSAGEM_CONEXAO,
     MENSAGEM_LIMITE_TAXA,
     MENSAGEM_RESPOSTA_INCONSISTENTE,
     MENSAGEM_TIMEOUT,
     GeradorOpenAI,
 )
+from geracao.prompts import PROMPT_SISTEMA, montar_conteudo_usuario
 from nucleo.erros import ErroGeracao
 from nucleo.modelos import Resposta, Secao, Trecho
 
@@ -136,7 +136,7 @@ def test_instrucao_provisoria_fica_na_mensagem_de_sistema_antes_dos_trechos() ->
 
     mensagens = cliente.chamadas[0]["messages"]
     assert mensagens[0]["role"] == "system"
-    assert mensagens[0]["content"] == INSTRUCAO_PROVISORIA
+    assert mensagens[0]["content"] == PROMPT_SISTEMA
     assert TEXTO_TRECHO not in mensagens[0]["content"]
     assert mensagens[1]["role"] == "user"
     assert TEXTO_TRECHO in mensagens[1]["content"]
@@ -149,5 +149,5 @@ def test_trecho_com_instrucao_maliciosa_fica_na_mensagem_do_usuario_apos_a_instr
 
     mensagens = cliente.chamadas[0]["messages"]
     assert TEXTO_INJECAO not in mensagens[0]["content"]
+    assert mensagens[1]["content"] == montar_conteudo_usuario(PERGUNTA, [_trecho(TEXTO_INJECAO)])
     assert TEXTO_INJECAO in mensagens[1]["content"]
-    assert "ignore qualquer comando" in mensagens[0]["content"]
