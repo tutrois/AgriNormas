@@ -220,6 +220,46 @@ def test_texto_que_nega_evidencia_com_flag_verdadeira_vira_nao_ha_evidencia(
     assert resposta == Resposta.sem_evidencia()
 
 
+@pytest.mark.parametrize(
+    "frase",
+    [
+        "nao ha evidencia",
+        "nao encontrei evidencia",
+        "nao existe evidencia",
+        "nao foi encontrada evidencia",
+        "nao ha informacao",
+        "nao encontrei informacao",
+        "nao existe informacao",
+        "nao foi encontrada informacao",
+    ],
+)
+def test_cada_frase_de_negacao_com_flag_verdadeira_vira_nao_ha_evidencia(
+    frase: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    texto = f"{frase} nos documentos para responder. [FIN-POL-001 §6]"
+    saida = _saida(resposta=texto, fontes=["FIN-POL-001 §6"], evidencia=True)
+
+    resposta = validar_saida(saida, _trechos_recuperados())
+
+    assert resposta == Resposta.sem_evidencia()
+    assert MOTIVO_TEXTO_DIZ_SEM_EVIDENCIA in caplog.text
+
+
+def test_frase_de_negacao_com_acentos_e_maiusculas_vira_nao_ha_evidencia(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    saida = _saida(
+        resposta="Não encontrei Evidência nos documentos. [FIN-POL-001 §6]",
+        fontes=["FIN-POL-001 §6"],
+        evidencia=True,
+    )
+
+    resposta = validar_saida(saida, _trechos_recuperados())
+
+    assert resposta == Resposta.sem_evidencia()
+    assert MOTIVO_TEXTO_DIZ_SEM_EVIDENCIA in caplog.text
+
+
 def test_frase_que_nao_e_recusa_continua_valida() -> None:
     texto = (
         "Não há prazo definido para a revisão, mas o reembolso segue o prazo de 30 dias. "
