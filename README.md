@@ -22,34 +22,36 @@ Assistente que responde perguntas em linguagem natural com base nas normativas i
 - **Linguagem:** Python 3.15 (versão fixada em `.python-version`)
 - **Geração de respostas:** OpenAI `gpt-4o-mini`
 - **Embeddings:** OpenAI `text-embedding-3-small`
-- **Índice:** numpy, em memória
+- **Índice:** numpy, em memória, com cache em disco
 - **Leitura de PDF:** pypdf
 - **Interface:** Streamlit
 - **Testes e qualidade:** pytest, ruff, mypy
-
 
 ## Status do projeto
 
 | Área | Situação |
 |---|---|
 | Ambiente, dependências e estrutura de pacotes (HIST-001) | Concluído |
-| Configuração validada (HIST-002) | Planejado |
+| Configuração validada (HIST-002) | Concluído |
 | Contratos e modelos de domínio (HIST-003) | Concluído |
-| Leitura, limpeza e chunking dos PDFs (EP-01) | Planejado |
-| Recuperação e limiar de similaridade (EP-02) | Planejado |
-| Geração fundamentada e validação de citações (EP-03) | Planejado |
-| Orquestração e composição (EP-04) | Planejado |
-| Interface Streamlit (EP-05) | Planejado |
-| Suíte de validação das seis perguntas (EP-06) | Planejado |
+| Leitura, limpeza e chunking dos PDFs (EP-01) | Concluído |
+| Recuperação e limiar de similaridade (EP-02) | Concluído. A busca híbrida foi testada e rejeitada (ver a seção sobre as perguntas 2, 3 e 4) |
+| Geração fundamentada e validação de citações (EP-03) | Aceito com ressalva (ver a seção sobre as perguntas 2, 3 e 4) |
+| Orquestração e composição (EP-04) | Aceito com ressalva |
+| Interface Streamlit (EP-05) | Aceito com ressalvas |
+| Suíte de validação das seis perguntas (EP-06) | Aceito com limitação: perguntas 2, 3 e 4 |
+| Qualidade estática e CI (HIST-024 e HIST-025) | Em andamento |
+| Documentação e entrega (EP-07) | Em andamento |
 
 ## Pré-requisitos
 
-- Python 3.15 ou superior (o projeto usa a versão fixada em `.python-version`; versões anteriores não são suportadas)
-- Uma chave de API da OpenAI, necessária para gerar respostas e embeddings reais
+- **Python 3.15**, a versão fixada em `.python-version`. Versões anteriores não são suportadas.
+- **Chave de API da OpenAI**, com saldo. É necessária para gerar respostas e embeddings.
+- **Git**, para clonar o repositório.
 
 ## Instalação
 
-Clone o repositório e entre na pasta do projeto.
+Clone o repositório e entre na pasta do projeto. Os comandos abaixo criam um ambiente virtual em `.venv` e instalam as dependências fixadas em `requirements.txt`.
 
 **Windows (PowerShell):**
 
@@ -59,7 +61,17 @@ py -3.15 -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-**macOS, Linux ou Git Bash:**
+Se o PowerShell bloquear a ativação do ambiente, rode uma vez `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` e tente de novo.
+
+**Windows (Git Bash):**
+
+```bash
+py -3.15 -m venv .venv
+source .venv/Scripts/activate
+python -m pip install -r requirements.txt
+```
+
+**Linux:**
 
 ```bash
 python3.15 -m venv .venv
@@ -67,90 +79,142 @@ source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
+Os comandos seguintes assumem o ambiente virtual ativo.
+
+### Pre-commit (recomendado para quem contribui)
+
+O pre-commit não está no `requirements.txt`. Ao ser instalado a partir do código-fonte, o PyYAML pode tentar compilar a extensão LibYAML, e a variável `PYYAML_FORCE_LIBYAML=0` evita isso. O hook roda `ruff check` e `ruff format` antes de cada commit.
+
+**Windows (PowerShell):**
+
+```powershell
+$env:PYYAML_FORCE_LIBYAML = "0"
+python -m pip install pre-commit
+pre-commit install
+```
+
+**Windows (Git Bash) e Linux:**
+
+```bash
+PYYAML_FORCE_LIBYAML=0 python -m pip install pre-commit
+pre-commit install
+```
+
 ## Configuração
 
-1. Copie o arquivo de exemplo:
+1. Copie o arquivo de exemplo.
 
-   ```bash
-   cp .env.example .env
-   ```
+   **PowerShell:** `Copy-Item .env.example .env`
 
-2. Preencha `OPENAI_API_KEY` no `.env`.
+   **Git Bash ou Linux:** `cp .env.example .env`
 
-O arquivo `.env` fica fora do repositório (está no `.gitignore`). Nunca coloque a chave em código, em log ou em commits.
+2. Abra o `.env` em um editor e preencha `OPENAI_API_KEY`.
 
-Os demais valores (modelos, limiar de similaridade, `TOP_K`, pasta dos documentos) têm padrões no `.env.example`. O limiar de similaridade é provisório e será calibrado com as perguntas de validação (ADR-002).
+O arquivo `.env` fica fora do repositório (está no `.gitignore`). Não cole a chave em código, em log, em issue ou em commit.
+
+Os demais valores já têm padrão no `.env.example`, e um valor vazio usa o padrão:
+
+| Variável | Padrão | Função |
+|---|---|---|
+| `MODELO_GERACAO` | `gpt-4o-mini` | Modelo que gera a resposta |
+| `MODELO_EMBEDDING` | `text-embedding-3-small` | Modelo dos embeddings |
+| `LIMIAR_SIMILARIDADE` | `0.60` | Abaixo dele, o trecho é descartado. Calibrado com as seis perguntas de validação |
+| `TOP_K` | `4` | Número de trechos recuperados por pergunta |
+| `PASTA_DOCUMENTOS` | `base_conhecimento` | Pasta com os PDFs lidos |
+| `TAMANHO_MAXIMO_CHUNK` | `1200` | Tamanho máximo de uma seção indexada |
+| `TIMEOUT_SEGUNDOS` | `30` | Tempo limite das chamadas à API |
+
+Se a aplicação mostrar um erro de configuração, confira o nome da variável e o valor no `.env`. A mensagem de erro não mostra o valor.
 
 ## Execução
 
-> Disponível quando a HIST-019 (tela de perguntas) estiver concluída.
+Com o ambiente virtual ativo, na raiz do projeto:
 
 ```bash
 streamlit run src/interface/app.py
 ```
 
-A aplicação abre no navegador. Digite uma pergunta e confira a resposta, as fontes e, quando for o caso, o aviso de falta de evidência.
+O Streamlit mostra o endereço da aplicação no terminal, normalmente `http://localhost:8501`. Digite uma pergunta e confira a resposta, as fontes e, quando for o caso, o aviso de falta de evidência.
+
+Na primeira execução, a aplicação lê os PDFs, gera os embeddings das seções e grava o cache em `dados/indice.npz`. Nas execuções seguintes, só as perguntas novas chamam a API. A pasta `dados/` pode ser apagada com segurança: o índice é recalculado na próxima execução, com custo de embeddings.
 
 ## Testes e qualidade
 
 ```bash
-# Testes offline (não chamam a API e não gastam créditos)
-pytest
+# Testes offline (não chamam a API e não precisam de chave)
+python -m pytest
 
-# Testes de integração com a API real (exige OPENAI_API_KEY no .env)
-pytest -m integracao
+# Testes de integração com a API real (exige OPENAI_API_KEY no .env e consome créditos)
+python -m pytest -m integracao
 
-# Lint e formatação
-ruff check .
-
-# Tipagem (modo estrito no núcleo)
-mypy
+# Lint, formatação e tipagem
+python -m ruff check .
+python -m ruff format --check .
+python -m mypy
 ```
 
-A suíte offline é o padrão. Os testes marcados com `integracao` são opcionais e chamam a API real.
+A suíte offline é o padrão. Casos marcados como `xfail` são falhas conhecidas (ver a seção abaixo), e não quebram a execução. Eles aparecem no resumo do pytest.
 
-## Perguntas de validação
+### Perguntas de validação
 
-As seis perguntas usadas para validar o assistente, com as respostas de referência, estão em [tests/validacao/perguntas.md](tests/validacao/perguntas.md). A pergunta sobre limite de combustível por viagem deve receber a resposta de que **não há evidência nos documentos**.
+As seis perguntas usadas para validar o assistente, com as respostas de referência, estão em [tests/validacao/perguntas.md](tests/validacao/perguntas.md). A pergunta 6 (limite de combustível por viagem) deve receber a resposta de que **não há evidência nos documentos**.
+
+Na integração com a API real, as perguntas 1, 5 e 6 passam. As perguntas 2, 3 e 4 seguem como `xfail`.
+
+### Vetores gravados da validação
+
+O modo offline da suíte não chama a API. Ele usa os embeddings gravados em `tests/validacao/vetores_gravados.npz`. **Regrave esse arquivo sempre que mudar** a base de documentos (`base_conhecimento/`), as perguntas (`tests/validacao/perguntas.md`), o modelo de embedding ou o texto indexado (`src/busca/indexacao.py`). Sem a regravação, o teste offline falha com uma mensagem pedindo para regravar.
+
+```bash
+python tests/validacao/gravar_vetores.py
+```
+
+O script faz um único pedido à API (com as seções e as seis perguntas) e consome créditos. Ele precisa da `OPENAI_API_KEY` no `.env`.
+
+### Limitação conhecida: perguntas 2, 3 e 4
+
+A recuperação não traz hoje todas as seções que sustentam estas respostas, porque elas ficam abaixo do limiar de 0,60:
+
+- **Pergunta 2:** FIN-POL-001 §4 tem cosseno 0,568.
+- **Pergunta 3:** FIN-POL-001 §4 tem cosseno 0,41. Na integração real, a resposta não cita essa seção.
+- **Pergunta 4:** RH-PRO-003 §4 tem cosseno 0,44. Com `TOP_K` 4, o modo offline também deixa de fora a §3.
+
+As falhas estão marcadas como `xfail` na suíte. Uma busca híbrida (cosseno com BM25) foi testada e não resolveu esses casos, por isso foi descartada. A abordagem para esses casos ainda não foi decidida.
 
 ## Estrutura de pastas
 
 ```
 AgriNormas/
 ├── base_conhecimento/     # Políticas em PDF lidas pelo assistente (versionado)
-├── docs/                  # Documentação de arquitetura e ADRs (versionado)
-│   ├── arquitetura/
-│   └── decisoes/
-├── planejamento/          # Backlog e material do desafio (não versionado)
 ├── src/
 │   ├── config.py          # Configuração validada a partir do .env
 │   ├── composicao.py      # Montagem das dependências (único lugar com implementações concretas)
 │   ├── nucleo/            # Regras de negócio: modelos, contratos, erros e assistente
 │   ├── documentos/        # Leitura, limpeza, metadados e chunking dos PDFs
-│   ├── busca/             # Embeddings, índice em memória e buscador com limiar
+│   ├── busca/             # Embeddings, índice em memória, buscador com limiar e cache
 │   ├── geracao/           # Cliente do modelo, prompt e validação de citações
 │   └── interface/         # Tela Streamlit
-├── tests/                 # Testes unitários, de validação e de robustez (validacao/ é versionado)
-├── dados/                 # Cache do índice (gerado em execução, não versionado)
+├── tests/                 # Testes unitários, de robustez, de integração e de validação
+│   └── validacao/         # Perguntas de validação e vetores gravados (versionado)
+├── scripts/               # Calibração do limiar
+├── dados/                 # Cache do índice, gerado em execução (não versionado)
 ├── .claude/               # Agentes e fluxo de desenvolvimento (não versionado)
 ├── pyproject.toml         # Configuração de ruff, mypy e pytest
 ├── requirements.txt       # Dependências com versões fixadas
 └── .env.example           # Modelo de configuração
 ```
 
-Os itens da árvore que ainda não existem no repositório (por exemplo, `src/config.py`, `src/composicao.py`, `src/nucleo/assistente.py` e os módulos de documentos, busca, geração e interface) são o destino previsto. O andamento de cada um está na tabela de status acima.
-
 | Pasta | O que contém | Versionado |
 |---|---|---|
 | `base_conhecimento/` | As três políticas em PDF. É a entrada de dados da aplicação, apontada por `PASTA_DOCUMENTOS` no `.env`. | Sim |
-| `docs/` | Arquitetura (`docs/arquitetura/`) e decisões técnicas (`docs/decisoes/`, os ADRs). | Sim |
-| `planejamento/` | Backlog (`backlog.md`) e material do desafio. Uso interno do projeto. | Não |
-| `tests/validacao/` | Perguntas de validação (`perguntas.md`), fonte única das respostas de referência. | Sim |
+| `tests/validacao/` | Perguntas de validação (`perguntas.md`), fonte única das respostas de referência, e vetores gravados. | Sim |
 | `dados/` | Cache do índice, gerado na execução. | Não |
 | `.claude/` | Agentes e fluxo de desenvolvimento, ferramenta local. | Não |
 
-Esta estrutura inclui `src/nucleo/` e `src/composicao.py`, que não estavam no desenho inicial. Eles isolam as regras de negócio das bibliotecas de IA, de PDF e de interface, o que permite testar a recusa sem chamar a API.
+## Arquitetura
 
-## Arquitetura em uma frase
+A interface chama o `AssistenteRAG`, que depende apenas de contratos (busca e geração), definidos em `src/nucleo/contratos.py`. As implementações concretas, como OpenAI, numpy e pypdf, são escolhidas em `src/composicao.py`, o único lugar que as conhece. Assim, cada parte pode ser trocada sem alterar as regras de negócio.
 
-A interface chama o `AssistenteRAG`, que depende apenas de contratos (busca e geração). As implementações concretas, como OpenAI, numpy e pypdf, são escolhidas em `src/composicao.py`. Assim, cada parte pode ser trocada sem alterar as regras de negócio.
+- **Documentos:** leitura, limpeza e chunking dos PDFs por seção numerada, com metadados (código do documento e número da seção). Seções de exceção ficam inteiras.
+- **Busca:** embeddings das seções, índice em memória e filtro pelo limiar de similaridade. Abaixo do limiar, o assistente responde que não há evidência.
+- **Geração:** monta o prompt com os trechos recuperados, pede a resposta ao modelo e valida se as citações correspondem aos trechos enviados. Quando a resposta depende de duas políticas, cita as duas.
