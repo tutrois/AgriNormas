@@ -9,3 +9,8 @@ python-dotenv==1.2.4
 pytest==9.2.0
 ruff==0.17.5
 mypy==2.4.1
+
+# Dependência de teste (não de execução): os testes do provedor constroem respostas httpx2 falsas
+# para gerar as exceções do SDK openai. É a mesma biblioteca que o openai 3.54.0 usa como HTTP,
+# fixada na versão instalada (2.16.2) para que a construção dos testes não mude sem aviso.
+httpx2==2.16.2
