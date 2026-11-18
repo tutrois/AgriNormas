@@ -1,8 +1,8 @@
-"""Cliente do modelo de linguagem da OpenAI (HIST-013).
+"""Cliente do modelo de linguagem da OpenAI (HIST-013 e HIST-015).
 
-Implementa o contrato `GeradorResposta`, com temperatura 0. Nesta etapa a resposta do
-modelo é tratada como texto simples: a saída em JSON e a validação de citações são da
-HIST-015. Erros do SDK viram `ErroGeracao`, com mensagem fixa, sem a chave, o prompt
+Implementa o contrato `GeradorResposta`, com temperatura 0 e saída em JSON (modo JSON do
+SDK). A saída passa por `validar_saida`, que confere as citações contra os trechos
+recebidos. Erros do SDK viram `ErroGeracao`, com mensagem fixa, sem a chave, o prompt
 ou a resposta bruta.
 """
 
@@ -16,6 +16,7 @@ import openai
 from openai.types.chat import ChatCompletion, ChatCompletionMessageParam
 
 from geracao.prompts import PROMPT_SISTEMA, montar_conteudo_usuario
+from geracao.validacao_resposta import validar_saida
 from nucleo.erros import ConfiguracaoInvalida, ErroGeracao
 from nucleo.modelos import Resposta, Trecho
 
@@ -64,7 +65,7 @@ class GeradorOpenAI:
             return Resposta.sem_evidencia()
         mensagens = _montar_mensagens(pergunta, trechos)
         resposta = self._chamar_modelo(mensagens)
-        return _interpretar(resposta)
+        return _interpretar(resposta, trechos)
 
     def _chamar_modelo(self, mensagens: list[ChatCompletionMessageParam]) -> ChatCompletion:
         """Chama a API e converte falhas do SDK em `ErroGeracao`.
@@ -75,7 +76,10 @@ class GeradorOpenAI:
         falha: str
         try:
             return self._cliente.chat.completions.create(
-                model=self._modelo, messages=mensagens, temperature=TEMPERATURA
+                model=self._modelo,
+                messages=mensagens,
+                temperature=TEMPERATURA,
+                response_format={"type": "json_object"},
             )
         except openai.AuthenticationError:
             falha = MENSAGEM_AUTENTICACAO
@@ -99,15 +103,14 @@ def _montar_mensagens(pergunta: str, trechos: Sequence[Trecho]) -> list[ChatComp
     ]
 
 
-def _interpretar(resposta: ChatCompletion) -> Resposta:
-    """Lê o texto da primeira escolha. Sem escolhas, a resposta é inconsistente."""
+def _interpretar(resposta: ChatCompletion, trechos: Sequence[Trecho]) -> Resposta:
+    """Lê o JSON da primeira escolha e o valida contra os trechos. Sem escolhas, é inconsistente."""
     if not resposta.choices:
         raise ErroGeracao(MENSAGEM_RESPOSTA_INCONSISTENTE) from None
     texto = (resposta.choices[0].message.content or "").strip()
     if not texto:
         return Resposta.sem_evidencia()
-    # Sem validação de citações (HIST-015), a resposta não traz fontes ainda.
-    return Resposta(texto=texto, fontes=(), evidencia_suficiente=True)
+    return validar_saida(texto, trechos)
 
 
 def _validar_configuracao(chave: str, modelo: str, timeout_segundos: float) -> None:
