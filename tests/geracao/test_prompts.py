@@ -49,8 +49,8 @@ def _bloco_pergunta(conteudo: str) -> str | None:
     return encontrado.group(1) if encontrado else None
 
 
-def test_versao_do_prompt_e_1_2() -> None:
-    assert PROMPT_VERSAO == "1.2"
+def test_versao_do_prompt_e_1_3() -> None:
+    assert PROMPT_VERSAO == "1.3"
 
 
 def test_prompt_contem_clausula_de_recusa() -> None:
@@ -100,11 +100,22 @@ def test_prompt_exige_citar_todos_os_documentos_quando_ha_mais_de_um() -> None:
     assert "vierem de mais de um documento" in PROMPT_SISTEMA
     assert "cite cada documento usado" in PROMPT_SISTEMA
     assert f'tanto no texto quanto em "{CAMPO_FONTES}"' in PROMPT_SISTEMA
-    assert "Citar apenas um" in PROMPT_SISTEMA
+    assert "apenas um dos documentos, quando a resposta depende de outras" in PROMPT_SISTEMA
 
 
 def test_prompt_so_dispensa_documento_que_nao_sustenta_a_resposta() -> None:
     assert "nenhum dos seus trechos sustentar a resposta" in PROMPT_SISTEMA
+
+
+def test_prompt_exige_citar_cada_secao_que_sustenta_a_resposta() -> None:
+    assert "Cite cada seção que sustenta alguma afirmação da resposta" in PROMPT_SISTEMA
+    assert "mesmo que outra seção do mesmo documento já tenha sido citada" in PROMPT_SISTEMA
+    assert f'aparecer no texto e em "{CAMPO_FONTES}"' in PROMPT_SISTEMA
+    assert "Citar apenas uma seção" in PROMPT_SISTEMA
+
+
+def test_prompt_proibe_citar_secao_que_nao_sustenta_a_resposta() -> None:
+    assert "Não cite seção que não sustente nenhuma afirmação" in PROMPT_SISTEMA
 
 
 def test_identificador_segue_o_formato_do_contexto() -> None:
