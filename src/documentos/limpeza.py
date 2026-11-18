@@ -93,15 +93,9 @@ def unir_quebras_de_linha(texto: str) -> str:
     `LARGURA_LINHA_CHEIA`.
     """
     linhas = texto.splitlines()
-    if not linhas:
-        return ""
-    blocos = [linhas[0]]
-    for anterior, linha in zip(linhas, linhas[1:], strict=False):
-        if _continua_paragrafo(anterior, linha):
-            blocos[-1] = f"{blocos[-1]}{_SEPARADOR_DE_BLOCO}{linha}"
-        else:
-            blocos.append(linha)
-    return "\n".join(blocos)
+    return "\n".join(
+        _SEPARADOR_DE_BLOCO.join(linhas[inicio:fim]) for inicio, fim in _agrupar_linhas(linhas)
+    )
 
 
 def limpar_texto(texto: str) -> str:
@@ -111,13 +105,49 @@ def limpar_texto(texto: str) -> str:
     return unir_quebras_de_linha(normalizar_espacos(sem_rodape))
 
 
-def limpar_paginas(paginas: Sequence[Pagina]) -> str:
-    """Texto limpo do documento inteiro, na ordem das páginas.
+def limpar_paginas(paginas: Sequence[Pagina]) -> tuple[tuple[int, str], ...]:
+    """Parágrafos limpos do documento, na ordem, cada um com o número da página em que começa.
 
-    Devolve `""` se nenhuma página tiver texto. Concatenar antes de unir as quebras
-    permite que um parágrafo continue na página seguinte.
+    Devolve uma tupla de pares `(numero_da_pagina, texto)`, um par por parágrafo unido.
+    Um parágrafo que atravessa páginas recebe a página em que começa. Páginas sem texto
+    útil não geram pares. Devolve `()` se nenhuma página tiver texto.
+
+    Contrato novo (HIST-007, M-18): antes, esta função devolvia uma única `str`, e o
+    número da página se perdia. `Secao.pagina` precisa dele. A limpeza de cada linha
+    (cabeçalho, rodapé e espaços) é feita por página, e a união das quebras é feita
+    sobre a sequência de linhas de todas as páginas, o que permite que um parágrafo
+    continue na página seguinte. A junção dos pares com `"\\n"` reproduz o texto que
+    `limpar_texto` devolveria para o documento concatenado.
     """
-    return limpar_texto("\n".join(pagina.texto for pagina in paginas))
+    linhas_com_pagina = [
+        (pagina.numero, linha) for pagina in paginas for linha in _linhas_limpas(pagina.texto)
+    ]
+    textos = [linha for _, linha in linhas_com_pagina]
+    return tuple(
+        (linhas_com_pagina[inicio][0], _SEPARADOR_DE_BLOCO.join(textos[inicio:fim]))
+        for inicio, fim in _agrupar_linhas(textos)
+    )
+
+
+def _linhas_limpas(texto: str) -> list[str]:
+    """Linhas de uma página, sem cabeçalho, rodapé nem espaços sobrando."""
+    return normalizar_espacos(remover_rodape(remover_cabecalho(texto))).splitlines()
+
+
+def _agrupar_linhas(linhas: Sequence[str]) -> list[tuple[int, int]]:
+    """Agrupa linhas consecutivas em blocos, devolvendo `(inicio, fim)` de cada bloco.
+
+    `fim` é exclusivo. Uma linha só entra no bloco da anterior quando
+    `_continua_paragrafo` diz que é continuação.
+    """
+    grupos: list[tuple[int, int]] = []
+    for indice, linha in enumerate(linhas):
+        if indice > 0 and _continua_paragrafo(linhas[indice - 1], linha):
+            inicio, _ = grupos[-1]
+            grupos[-1] = (inicio, indice + 1)
+        else:
+            grupos.append((indice, indice + 1))
+    return grupos
 
 
 def _remover_linhas(texto: str, padrao: re.Pattern[str]) -> str:

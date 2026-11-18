@@ -72,8 +72,12 @@ def _ler_paginas(nome: str) -> tuple[Pagina, ...]:
     return LeitorPdf().ler(PASTA_BASE / nome)
 
 
+def _juntar(paragrafos: tuple[tuple[int, str], ...]) -> str:
+    return "\n".join(texto for _, texto in paragrafos)
+
+
 def _texto_limpo(nome: str) -> str:
-    return limpar_paginas(_ler_paginas(nome))
+    return _juntar(limpar_paginas(_ler_paginas(nome)))
 
 
 def _tokens(texto: str) -> list[str]:
@@ -206,13 +210,13 @@ def test_quebra_de_meio_de_frase_com_96_caracteres_se_une_com_minuscula() -> Non
 def test_texto_vazio_devolve_vazio_em_todas_as_etapas() -> None:
     assert limpar_texto("") == ""
     assert unir_quebras_de_linha("") == ""
-    assert limpar_paginas(()) == ""
+    assert limpar_paginas(()) == ()
 
 
 def test_pagina_so_com_cabecalho_e_rodape_devolve_vazio() -> None:
     paginas = (Pagina(numero=1, texto=f"{CABECALHO_BRUTO}\nPágina 1\n"),)
 
-    assert limpar_paginas(paginas) == ""
+    assert limpar_paginas(paginas) == ()
 
 
 def test_limpeza_e_deterministica_em_texto_sintetico() -> None:
@@ -228,7 +232,74 @@ def test_paragrafo_continua_na_pagina_seguinte() -> None:
         Pagina(numero=2, texto=f"{CABECALHO_BRUTO}\nPágina 2\nfinal da frase."),
     )
 
-    assert limpar_paginas(paginas) == f"{cheia} final da frase."
+    assert limpar_paginas(paginas) == ((1, f"{cheia} final da frase."),)
+
+
+def test_paragrafo_que_comeca_na_pagina_1_e_termina_na_2_fica_com_pagina_1() -> None:
+    cheia = "x" * LARGURA_LINHA_CHEIA
+    paginas = (
+        Pagina(numero=1, texto=f"{CABECALHO_BRUTO}\nPágina 1\n{cheia}"),
+        Pagina(numero=2, texto=f"{CABECALHO_BRUTO}\nPágina 2\nfinal da frase.\nNovo parágrafo."),
+    )
+
+    assert limpar_paginas(paginas) == (
+        (1, f"{cheia} final da frase."),
+        (2, "Novo parágrafo."),
+    )
+
+
+def test_paginas_sem_continuacao_mantem_o_proprio_numero() -> None:
+    paginas = (
+        Pagina(numero=1, texto=f"{CABECALHO_BRUTO}\nPágina 1\n1. Objetivo\nCorpo da página um."),
+        Pagina(numero=2, texto=f"{CABECALHO_BRUTO}\nPágina 2\n2. Escopo\nCorpo da página dois."),
+        Pagina(numero=3, texto=f"{CABECALHO_BRUTO}\nPágina 3\n3. Termos"),
+    )
+
+    assert limpar_paginas(paginas) == (
+        (1, "1. Objetivo"),
+        (1, "Corpo da página um."),
+        (2, "2. Escopo"),
+        (2, "Corpo da página dois."),
+        (3, "3. Termos"),
+    )
+
+
+def test_paginas_vazias_nao_geram_pares() -> None:
+    paginas = (
+        Pagina(numero=1, texto=f"{CABECALHO_BRUTO}\nPágina 1\n1. Objetivo"),
+        Pagina(numero=2, texto=f"{CABECALHO_BRUTO}\nPágina 2\n"),
+        Pagina(numero=3, texto="   \n\n  \t\n"),
+        Pagina(numero=4, texto=""),
+        Pagina(numero=5, texto="2. Escopo"),
+    )
+
+    assert limpar_paginas(paginas) == ((1, "1. Objetivo"), (5, "2. Escopo"))
+
+
+def test_limpar_paginas_e_determinista() -> None:
+    paginas = (
+        Pagina(numero=1, texto=f"{CABECALHO_BRUTO}\nPágina 1\n1. Objetivo\nCorpo."),
+        Pagina(numero=2, texto=f"{CABECALHO_BRUTO}\nPágina 2\nfinal da frase."),
+    )
+
+    assert limpar_paginas(paginas) == limpar_paginas(paginas)
+
+
+@pytest.mark.parametrize("nome", PDFS_REAIS)
+def test_juncao_dos_pares_reproduz_o_texto_do_documento_concatenado(nome: str) -> None:
+    paginas = _ler_paginas(nome)
+    concatenado = "\n".join(pagina.texto for pagina in paginas)
+
+    assert _juntar(limpar_paginas(paginas)) == limpar_texto(concatenado)
+
+
+def test_veiculos_tem_um_par_por_paragrafo_com_paginas_em_ordem_cobrindo_as_quatro() -> None:
+    paginas = _ler_paginas("Politica_Veiculos.pdf")
+    numeros = [numero for numero, _ in limpar_paginas(paginas)]
+
+    assert len(paginas) == 4
+    assert numeros == sorted(numeros)
+    assert set(numeros) == {1, 2, 3, 4}
 
 
 # --- PDFs reais -------------------------------------------------------------------------
@@ -271,7 +342,7 @@ def test_todos_os_titulos_numerados_sobrevivem_intactos(nome: str) -> None:
     titulos_brutos = [
         linha.strip() for linha in bruto.splitlines() if PADRAO_TITULO_NA_LINHA.match(linha.strip())
     ]
-    linhas_limpas = set(limpar_paginas(paginas).split("\n"))
+    linhas_limpas = set(_juntar(limpar_paginas(paginas)).split("\n"))
 
     assert titulos_brutos
     assert all(titulo in linhas_limpas for titulo in titulos_brutos)

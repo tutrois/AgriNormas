@@ -70,7 +70,7 @@ def test_dois_titulos_seguidos_ficam_em_linhas_proprias() -> None:
 def test_procedimento_ferias_nao_tem_rodape_de_fim_colado_ao_paragrafo() -> None:
     paginas = LeitorPdf().ler(PASTA_BASE / "Procedimento_Ferias.pdf")
 
-    assert "Fim do documento" not in limpar_paginas(paginas)
+    assert all("Fim do documento" not in texto for _, texto in limpar_paginas(paginas))
 
 
 def test_pagina_de_rodape_isolada_nao_altera_a_ordem_das_outras() -> None:
@@ -79,4 +79,8 @@ def test_pagina_de_rodape_isolada_nao_altera_a_ordem_das_outras() -> None:
         Pagina(numero=2, texto=f"{CABECALHO_BRUTO}\nPágina 2\n2. Escopo"),
     )
 
-    assert limpar_paginas(paginas) == "1. Objetivo\nCorpo.\n2. Escopo"
+    assert limpar_paginas(paginas) == (
+        (1, "1. Objetivo"),
+        (1, "Corpo."),
+        (2, "2. Escopo"),
+    )
