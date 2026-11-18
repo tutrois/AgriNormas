@@ -190,3 +190,40 @@ def test_base_sem_secoes_levanta_erro_documento_sem_chamar_o_provedor(
         _montar(monkeypatch, provedor)
 
     assert provedor.pedidos == []
+
+
+# Montagem a partir do ambiente
+
+
+def test_montar_do_ambiente_usa_a_configuracao_carregada_do_ambiente(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configuracao_do_ambiente = Configuracao(
+        chave_openai="sk-ambiente-111",
+        modelo_geracao=CONFIGURACAO.modelo_geracao,
+        modelo_embedding=CONFIGURACAO.modelo_embedding,
+        limiar_similaridade=CONFIGURACAO.limiar_similaridade,
+        top_k=CONFIGURACAO.top_k,
+        pasta_documentos=CONFIGURACAO.pasta_documentos,
+        tamanho_maximo_chunk=CONFIGURACAO.tamanho_maximo_chunk,
+        timeout_segundos=CONFIGURACAO.timeout_segundos,
+    )
+    chamadas_de_carregamento: list[tuple[object, ...]] = []
+    configuracoes_recebidas: list[Configuracao] = []
+
+    def carregar_falso(*args: object, **kwargs: object) -> Configuracao:
+        chamadas_de_carregamento.append((args, kwargs))
+        return configuracao_do_ambiente
+
+    def provedor_falso(configuracao: Configuracao) -> ProvedorPorDimensao:
+        configuracoes_recebidas.append(configuracao)
+        return ProvedorPorDimensao([3])
+
+    monkeypatch.setattr(composicao, "carregar_configuracao", carregar_falso)
+    monkeypatch.setattr(composicao, "_provedor_embedding", provedor_falso)
+
+    assistente = composicao.montar_assistente_do_ambiente()
+
+    assert isinstance(assistente, AssistenteRAG)
+    assert chamadas_de_carregamento == [((), {})]
+    assert configuracoes_recebidas == [configuracao_do_ambiente]

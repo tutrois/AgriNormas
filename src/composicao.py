@@ -21,7 +21,7 @@ from busca.cache import EntradaCache, RepositorioCacheVetores, hash_texto
 from busca.indexacao import construir_indice, construir_indice_com_cache, texto_indexavel
 from busca.indice_memoria import MENSAGEM_DIMENSAO_DIFERENTE_DO_INDICE
 from busca.provedor_openai import ProvedorEmbeddingOpenAI
-from config import RAIZ_PROJETO, Configuracao
+from config import RAIZ_PROJETO, Configuracao, carregar_configuracao
 from documentos.chunker_secao import ChunkerPorSecao
 from documentos.leitor_pdf import LeitorPdf
 from documentos.limpeza import limpar_paginas
@@ -72,6 +72,15 @@ def montar_assistente(configuracao: Configuracao) -> AssistenteRAG:
         modelo=configuracao.modelo_geracao,
     )
     return AssistenteRAG(buscador, gerador)
+
+
+def montar_assistente_do_ambiente() -> AssistenteRAG:
+    """Carrega a configuração do ambiente (`.env` e `os.environ`) e monta o `AssistenteRAG`.
+
+    Ponto de entrada para quem não deve conhecer `config`, como a interface. Erros de configuração
+    propagam como `ConfiguracaoInvalida`, sem citar valores secretos.
+    """
+    return montar_assistente(carregar_configuracao())
 
 
 def carregar_secoes(pasta: Path, tamanho_maximo: int) -> tuple[Secao, ...]:
