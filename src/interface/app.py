@@ -11,7 +11,8 @@ o limite de tamanho da pergunta é decidido pelo núcleo (`PerguntaInvalida`), n
 Estados da tela (TSK-020.2):
 - inicial: só o campo de pergunta;
 - carregando: indicador enquanto a base é preparada e enquanto a pergunta é respondida;
-- com evidência: texto puro da resposta e fontes em um expansor;
+- com evidência: título "Resposta", texto puro da resposta (quebra de linha no próprio texto,
+  sem fonte monoespaçada) e fontes em um expansor;
 - sem evidência: aviso informativo (`st.info`), sem fontes;
 - pergunta inválida: aviso (`st.warning`) com a mensagem do núcleo;
 - erro de configuração: orienta a conferir o `.env`, sem valores nem detalhes;
@@ -20,6 +21,7 @@ Estados da tela (TSK-020.2):
 
 from __future__ import annotations
 
+import html
 import logging
 import sys
 import traceback
@@ -49,6 +51,32 @@ DESCRICAO: Final[str] = (
     "e as fontes aparecem logo abaixo."
 )
 ROTULO_PERGUNTA: Final[str] = "Pergunta"
+AJUDA_PERGUNTA: Final[str] = (
+    "Escreva a pergunta em uma frase. A resposta vem só dos documentos da base."
+)
+TITULO_RESPOSTA: Final[str] = "Resposta"
+CLASSE_RESPOSTA: Final[str] = "agrinormas-resposta"
+# Layout: margem lateral de 16 px em tela estreita e quebra de linha do texto da resposta e
+# do conteúdo das fontes (título ou código longo não pode criar rolagem horizontal).
+# O CSS só ajusta a apresentação, sem recursos externos (sem `url(` nem `@import`).
+# O conteúdo continua sendo texto escapado.
+ESTILO_PAGINA: Final[str] = f"""
+<style>
+@media (max-width: 640px) {{
+  [data-testid="stMainBlockContainer"] {{
+    padding-left: 16px;
+    padding-right: 16px;
+  }}
+}}
+.{CLASSE_RESPOSTA} {{
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}}
+[data-testid="stExpander"] [data-testid="stMarkdownContainer"] {{
+  overflow-wrap: anywhere;
+}}
+</style>
+"""
 TEXTO_BOTAO_ENVIAR: Final[str] = "Enviar pergunta"
 MENSAGEM_PREPARANDO: Final[str] = (
     "Preparando a base de documentos. Na primeira vez, pode demorar um pouco."
@@ -82,7 +110,12 @@ def _assistente() -> AssistenteRAG:
 
 
 def _escapar_markdown(texto: str) -> str:
-    """Impede que texto vindo dos PDFs (títulos, códigos) vire formatação ou link."""
+    """Impede que texto vindo do núcleo ou dos PDFs (títulos, códigos) vire formatação ou link.
+
+    Limitação conhecida: o escape não impede o autolink de URL e e-mail do GFM (`http://`,
+    `www.`, `fulano@...`). Nesse caso a barra invertida aparece no texto do link. Ressalva
+    aberta na M-59 do backlog. Não é tratada aqui.
+    """
     return texto.translate(_CARACTERES_MARKDOWN)
 
 
@@ -90,7 +123,8 @@ def _mostrar_erro(erro: ErroAssistente) -> None:
     """Traduz uma exceção esperada do domínio em aviso ou erro para o usuário."""
     if isinstance(erro, PerguntaInvalida):
         # A mensagem vem do núcleo e descreve a regra (vazia ou longa demais).
-        st.warning(str(erro))
+        # O escape não impede autolink de URL e e-mail (M-59 do backlog).
+        st.warning(_escapar_markdown(str(erro)))
     elif isinstance(erro, ConfiguracaoInvalida):
         st.error(MENSAGEM_CONFIGURACAO)
     else:
@@ -149,13 +183,24 @@ def _mostrar_fontes(fontes: tuple[Fonte, ...]) -> None:
             st.markdown(_formatar_fonte(fonte))
 
 
+def _mostrar_texto_puro(texto: str) -> None:
+    """Mostra o texto literal: escapado em HTML, sem Markdown, links ou imagens.
+
+    `st.text` usaria fonte monoespaçada e não quebraria linha em tela estreita.
+    Escapar o HTML faz o texto virar só texto: nenhum elemento `<a>` ou `<img>` é criado.
+    """
+    st.html(f'<div class="{CLASSE_RESPOSTA}">{html.escape(texto)}</div>')
+
+
 def _mostrar_resultado(resposta: Resposta) -> None:
+    # `st.header` é h2: a página tem h1 (título) e não pula nível.
+    st.header(TITULO_RESPOSTA)
     if not resposta.evidencia_suficiente:
         # Recusa do núcleo: aviso informativo, sem fontes e sem o formato de resposta normal.
-        st.info(resposta.texto)
+        # O escape não impede autolink de URL e e-mail (M-59 do backlog).
+        st.info(_escapar_markdown(resposta.texto))
         return
-    # Texto do modelo sai como texto puro: nada de Markdown, links ou imagens.
-    st.text(resposta.texto)
+    _mostrar_texto_puro(resposta.texto)
     _mostrar_fontes(resposta.fontes)
 
 
@@ -167,6 +212,7 @@ def _mostrar_resposta(assistente: AssistenteRAG, pergunta: str) -> None:
 
 def main() -> None:
     st.set_page_config(page_title=TITULO_PAGINA)
+    st.html(ESTILO_PAGINA)
     st.title(TITULO)
     st.write(DESCRICAO)
     assistente = _executar_com_tratamento(_assistente, MENSAGEM_PREPARANDO)
@@ -174,7 +220,7 @@ def main() -> None:
         # Sem assistente não há o que perguntar: o erro já foi mostrado acima.
         return
     with st.form("formulario_pergunta"):
-        pergunta = st.text_input(ROTULO_PERGUNTA)
+        pergunta = st.text_input(ROTULO_PERGUNTA, help=AJUDA_PERGUNTA)
         enviado = st.form_submit_button(TEXTO_BOTAO_ENVIAR)
     if enviado:
         _mostrar_resposta(assistente, pergunta)
