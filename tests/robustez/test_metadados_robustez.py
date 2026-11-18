@@ -30,8 +30,16 @@ TEXTO_BASE = (
 )
 
 
+LINHA_COM_60_CARACTERES = "Nota: " + "a" * 54
+LINHA_COM_61_CARACTERES = LINHA_COM_60_CARACTERES + "a"
+
+
 def _extrair(texto: str):
     return extrair_metadados(texto, CAMINHO_FICTICIO)
+
+
+def _com_linha_logo_apos_o_rotulo(linha: str) -> str:
+    return TEXTO_BASE.replace("Identificação\n", f"Identificação\n{linha}\n", 1)
 
 
 def test_titulo_com_acento_e_espaco_a_esquerda_e_extraido_sem_espaco() -> None:
@@ -97,6 +105,27 @@ def test_subtitulo_em_caixa_alta_nao_substitui_o_titulo() -> None:
 
 def test_rotulo_identificacao_solto_no_corpo_antes_do_titulo_nao_derruba_a_extracao() -> None:
     texto = "Identificação\n" + TEXTO_BASE
+
+    assert _extrair(texto).codigo == "FIN-POL-001"
+
+
+def test_linha_da_tabela_com_60_caracteres_nao_encerra_a_tabela() -> None:
+    assert len(LINHA_COM_60_CARACTERES) == 60
+
+    assert _extrair(_com_linha_logo_apos_o_rotulo(LINHA_COM_60_CARACTERES)).codigo == "FIN-POL-001"
+
+
+def test_linha_da_tabela_com_61_caracteres_encerra_a_tabela_antes_do_codigo() -> None:
+    assert len(LINHA_COM_61_CARACTERES) == 61
+
+    with pytest.raises(ErroDocumento) as info:
+        _extrair(_com_linha_logo_apos_o_rotulo(LINHA_COM_61_CARACTERES))
+
+    assert "Tabela de identificação ausente" in str(info.value)
+
+
+def test_recuo_com_nbsp_nao_conta_para_o_limite_de_60_caracteres() -> None:
+    texto = _com_linha_logo_apos_o_rotulo("\xa0\xa0" + LINHA_COM_60_CARACTERES)
 
     assert _extrair(texto).codigo == "FIN-POL-001"
 
