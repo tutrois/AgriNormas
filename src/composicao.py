@@ -4,6 +4,9 @@
 dependências, carrega e indexa os documentos e devolve o `AssistenteRAG`. Não decide regra
 de negócio: a recusa e as fontes ficam em `nucleo/assistente.py` (ADR-001).
 
+Com `NUMERO_REFORMULACOES` maior que zero, a busca semântica é envolvida por
+`BuscadorComFormulacoes`, com o `ReescritorOpenAI` (ADR-010). Com zero, a busca é só a semântica.
+
 A montagem usa o cache de vetores (`busca.cache`) em `CAMINHO_CACHE_VETORES`. Quando o cache
 tem dimensão diferente da do provedor (M-29) e não há textos novos, o erro só aparece na
 consulta. Nesse caso `_BuscadorComReconstrucao` descarta o cache, reconstrói o índice e
@@ -17,6 +20,7 @@ from pathlib import Path
 from typing import Final
 
 from busca.buscador import BuscadorSemantico
+from busca.buscador_formulacoes import BuscadorComFormulacoes
 from busca.cache import EntradaCache, RepositorioCacheVetores, hash_texto
 from busca.indexacao import construir_indice, construir_indice_com_cache, entradas_indexaveis
 from busca.indice_memoria import MENSAGEM_DIMENSAO_DIFERENTE_DO_INDICE
@@ -27,8 +31,16 @@ from documentos.leitor_pdf import LeitorPdf
 from documentos.limpeza import limpar_paginas
 from documentos.metadados import extrair_metadados
 from geracao.gerador_openai import GeradorOpenAI
+from geracao.reescritor_consulta import ReescritorOpenAI
 from nucleo.assistente import AssistenteRAG
-from nucleo.contratos import Chunker, Indice, LeitorDocumento, ProvedorEmbedding
+from nucleo.contratos import (
+    Buscador,
+    Chunker,
+    Indice,
+    LeitorDocumento,
+    ProvedorEmbedding,
+    ReescritorConsulta,
+)
 from nucleo.erros import ErroBusca, ErroDocumento
 from nucleo.modelos import Secao, Trecho, Vetor
 
@@ -69,6 +81,7 @@ def montar_assistente(configuracao: Configuracao) -> AssistenteRAG:
         modelo=configuracao.modelo_embedding,
         limiar_similaridade=configuracao.limiar_similaridade,
         top_k=configuracao.top_k,
+        reescritor=_reescritor(configuracao),
     )
     gerador = GeradorOpenAI(
         chave=configuracao.chave_openai,
@@ -115,12 +128,27 @@ def _provedor_embedding(configuracao: Configuracao) -> ProvedorEmbedding:
     )
 
 
+def _reescritor(configuracao: Configuracao) -> ReescritorConsulta | None:
+    """Reescritor com N formulações, ou None quando N é 0 (ADR-010): sem reescrita, sem fusão."""
+    if configuracao.numero_reformulacoes == 0:
+        return None
+    return ReescritorOpenAI(
+        chave=configuracao.chave_openai,
+        timeout_segundos=configuracao.timeout_segundos,
+        numero_formulacoes=configuracao.numero_reformulacoes,
+        modelo=configuracao.modelo_geracao,
+    )
+
+
 class _BuscadorComReconstrucao:
     """Implementa `Buscador` e recalcula o índice quando o cache tem outra dimensão (M-29).
 
     Só o erro de dimensão do índice dispara a reconstrução. Ela descarta o cache, monta o índice
     de novo com todas as seções, regrava o cache e troca o índice em uso. A pergunta é repetida
     uma única vez: se falhar de novo, o erro sobe, sem laço.
+
+    Com `reescritor`, o buscador em uso é o `BuscadorComFormulacoes` (ADR-010). Sem ele, é só o
+    `BuscadorSemantico`. Nos dois casos a reconstrução recria o buscador do mesmo jeito.
     """
 
     def __init__(
@@ -133,6 +161,7 @@ class _BuscadorComReconstrucao:
         modelo: str,
         limiar_similaridade: float,
         top_k: int,
+        reescritor: ReescritorConsulta | None,
     ) -> None:
         self._secoes = tuple(secoes)
         self._provedor = provedor
@@ -140,6 +169,7 @@ class _BuscadorComReconstrucao:
         self._modelo = modelo
         self._limiar_similaridade = limiar_similaridade
         self._top_k = top_k
+        self._reescritor = reescritor
         self._buscador = self._novo_buscador(indice)
 
     def buscar(self, pergunta: str) -> tuple[Trecho, ...]:
@@ -151,10 +181,18 @@ class _BuscadorComReconstrucao:
         self._reconstruir()
         return self._buscador.buscar(pergunta)
 
-    def _novo_buscador(self, indice: Indice) -> BuscadorSemantico:
-        return BuscadorSemantico(
+    def _novo_buscador(self, indice: Indice) -> Buscador:
+        semantico = BuscadorSemantico(
             self._provedor,
             indice,
+            limiar_similaridade=self._limiar_similaridade,
+            top_k=self._top_k,
+        )
+        if self._reescritor is None:
+            return semantico
+        return BuscadorComFormulacoes(
+            semantico,
+            self._reescritor,
             limiar_similaridade=self._limiar_similaridade,
             top_k=self._top_k,
         )

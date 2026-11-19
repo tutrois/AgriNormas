@@ -44,6 +44,8 @@ MODELO_GRAVADO = "text-embedding-3-small"
 
 # O modo offline fixa a configuração: os valores calibrados (ADR-002) e os padrões do projeto.
 # O `.env` local não entra aqui, para que o resultado não mude de máquina para máquina.
+# NUMERO_REFORMULACOES=0 desliga o reescritor (ADR-010). Com N>0 a composição criaria um
+# ReescritorOpenAI real, que chamaria a API; o modo offline não pode depender disso.
 CONFIGURACAO_OFFLINE = {
     "OPENAI_API_KEY": "chave-ficticia-do-modo-offline",
     "MODELO_EMBEDDING": MODELO_GRAVADO,
@@ -52,6 +54,7 @@ CONFIGURACAO_OFFLINE = {
     "TOP_K": "4",
     "TAMANHO_MAXIMO_CHUNK": "1200",
     "PASTA_DOCUMENTOS": str(PASTA_BASE),
+    "NUMERO_REFORMULACOES": "0",
 }
 
 COLUNAS_PERGUNTA = 4

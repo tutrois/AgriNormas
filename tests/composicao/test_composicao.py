@@ -18,11 +18,15 @@ from busca.indexacao import entradas_indexaveis
 from busca.indice_memoria import MENSAGEM_DIMENSAO_DIFERENTE_DO_INDICE
 from config import Configuracao, carregar_configuracao
 from nucleo.assistente import AssistenteRAG
-from nucleo.erros import ErroBusca, ErroDocumento
+from nucleo.erros import ErroBusca, ErroDocumento, ErroReescrita
 from nucleo.modelos import Fonte, Resposta, Secao, Trecho, Vetor
 
 PERGUNTA = "Qual é o prazo de entrega?"
+FORMULACAO = "Em quantos dias os pedidos chegam?"
 CONFIGURACAO: Configuracao = carregar_configuracao(ambiente={"OPENAI_API_KEY": "sk-teste-000"})
+CONFIGURACAO_SEM_REFORMULACAO: Configuracao = carregar_configuracao(
+    ambiente={"OPENAI_API_KEY": "sk-teste-000", "NUMERO_REFORMULACOES": "0"}
+)
 MODELO = CONFIGURACAO.modelo_embedding
 SECOES = (
     Secao(documento="FIN-POL-001", numero="1", titulo="Prazo", texto="Entrega em cinco dias."),
@@ -70,15 +74,44 @@ class ProvedorComFalhaNaConsulta(ProvedorPorDimensao):
 
 
 class GeradorFalso:
-    """Dublê de `GeradorResposta`: cita todas as seções recebidas e conta as chamadas."""
+    """Dublê de `GeradorResposta`: cita todas as seções recebidas e guarda as perguntas."""
 
     def __init__(self) -> None:
         self.chamadas = 0
+        self.perguntas: list[str] = []
 
     def gerar(self, pergunta: str, trechos: Sequence[Trecho]) -> Resposta:
         self.chamadas += 1
+        self.perguntas.append(pergunta)
         fontes = tuple(Fonte.de_secao(trecho.secao) for trecho in trechos)
         return Resposta(texto="Resposta de teste.", fontes=fontes, evidencia_suficiente=True)
+
+
+class ReescritorFalso:
+    """Dublê de `ReescritorConsulta`: devolve as formulações dadas ou falha, e guarda perguntas."""
+
+    def __init__(self, formulacoes: Sequence[str] = (), erro: Exception | None = None) -> None:
+        self._formulacoes = tuple(formulacoes)
+        self._erro = erro
+        self.perguntas: list[str] = []
+
+    def reescrever(self, pergunta: str) -> tuple[str, ...]:
+        self.perguntas.append(pergunta)
+        if self._erro is not None:
+            raise self._erro
+        return self._formulacoes
+
+
+class FabricaReescritorFalso:
+    """Substitui `ReescritorOpenAI`: guarda os argumentos da criação e devolve o dublê."""
+
+    def __init__(self) -> None:
+        self.argumentos: list[dict[str, object]] = []
+        self.reescritor = ReescritorFalso()
+
+    def __call__(self, **kwargs: object) -> ReescritorFalso:
+        self.argumentos.append(kwargs)
+        return self.reescritor
 
 
 @pytest.fixture(autouse=True)
@@ -96,9 +129,21 @@ def gerador(monkeypatch: pytest.MonkeyPatch) -> GeradorFalso:
     return instancia
 
 
-def _montar(monkeypatch: pytest.MonkeyPatch, provedor: ProvedorPorDimensao) -> AssistenteRAG:
+@pytest.fixture(autouse=True)
+def fabrica_reescritor(monkeypatch: pytest.MonkeyPatch) -> FabricaReescritorFalso:
+    """Nenhum teste desta suíte chama a API: o reescritor real nunca é criado de verdade."""
+    fabrica = FabricaReescritorFalso()
+    monkeypatch.setattr(composicao, "ReescritorOpenAI", fabrica)
+    return fabrica
+
+
+def _montar(
+    monkeypatch: pytest.MonkeyPatch,
+    provedor: ProvedorPorDimensao,
+    configuracao: Configuracao = CONFIGURACAO,
+) -> AssistenteRAG:
     monkeypatch.setattr(composicao, "_provedor_embedding", lambda _configuracao: provedor)
-    return composicao.montar_assistente(CONFIGURACAO)
+    return composicao.montar_assistente(configuracao)
 
 
 # Caminho feliz
@@ -240,6 +285,100 @@ def test_base_sem_secoes_levanta_erro_documento_sem_chamar_o_provedor(
     assert provedor.pedidos == []
 
 
+# Reescrita da pergunta (ADR-010): ligação do adaptador na composição
+
+
+def test_com_zero_formulacoes_nao_cria_o_reescritor_nem_envolve_a_busca(
+    monkeypatch: pytest.MonkeyPatch, fabrica_reescritor: FabricaReescritorFalso
+) -> None:
+    def nao_deveria_ser_criado(**_kwargs: object) -> None:
+        pytest.fail("com NUMERO_REFORMULACOES=0 a busca não é envolvida pelo adaptador")
+
+    monkeypatch.setattr(composicao, "BuscadorComFormulacoes", nao_deveria_ser_criado)
+    provedor = ProvedorPorDimensao([3])
+    assistente = _montar(monkeypatch, provedor, CONFIGURACAO_SEM_REFORMULACAO)
+
+    resposta = assistente.responder(PERGUNTA)
+
+    assert fabrica_reescritor.argumentos == []
+    assert provedor.pedidos == [TEXTOS_INDEXAVEIS, (PERGUNTA,)]
+    assert resposta.evidencia_suficiente
+
+
+def test_com_formulacoes_a_montagem_cria_o_reescritor_com_a_configuracao_do_gerador(
+    monkeypatch: pytest.MonkeyPatch, fabrica_reescritor: FabricaReescritorFalso
+) -> None:
+    _montar(monkeypatch, ProvedorPorDimensao([3]))
+
+    assert fabrica_reescritor.argumentos == [
+        {
+            "chave": CONFIGURACAO.chave_openai,
+            "timeout_segundos": CONFIGURACAO.timeout_segundos,
+            "numero_formulacoes": 3,
+            "modelo": CONFIGURACAO.modelo_geracao,
+        }
+    ]
+
+
+def test_com_formulacoes_a_busca_consulta_a_original_e_depois_cada_formulacao(
+    monkeypatch: pytest.MonkeyPatch, fabrica_reescritor: FabricaReescritorFalso
+) -> None:
+    fabrica_reescritor.reescritor = ReescritorFalso((FORMULACAO,))
+    provedor = ProvedorPorDimensao([3])
+    assistente = _montar(monkeypatch, provedor)
+
+    assistente.responder(PERGUNTA)
+
+    assert provedor.pedidos == [TEXTOS_INDEXAVEIS, (PERGUNTA,), (FORMULACAO,)]
+
+
+def test_o_gerador_recebe_a_pergunta_original_mesmo_com_formulacoes(
+    monkeypatch: pytest.MonkeyPatch,
+    gerador: GeradorFalso,
+    fabrica_reescritor: FabricaReescritorFalso,
+) -> None:
+    fabrica_reescritor.reescritor = ReescritorFalso((FORMULACAO,))
+    assistente = _montar(monkeypatch, ProvedorPorDimensao([3]))
+
+    assistente.responder(PERGUNTA)
+
+    assert gerador.perguntas == [PERGUNTA]
+    assert fabrica_reescritor.reescritor.perguntas == [PERGUNTA]
+
+
+def test_falha_do_reescritor_nao_quebra_a_resposta_e_segue_com_a_original(
+    monkeypatch: pytest.MonkeyPatch,
+    gerador: GeradorFalso,
+    fabrica_reescritor: FabricaReescritorFalso,
+) -> None:
+    fabrica_reescritor.reescritor = ReescritorFalso(erro=ErroReescrita("Falha simulada."))
+    provedor = ProvedorPorDimensao([3])
+    assistente = _montar(monkeypatch, provedor)
+
+    resposta = assistente.responder(PERGUNTA)
+
+    assert provedor.pedidos == [TEXTOS_INDEXAVEIS, (PERGUNTA,)]
+    assert gerador.perguntas == [PERGUNTA]
+    assert set(resposta.fontes) == {Fonte.de_secao(secao) for secao in SECOES}
+
+
+def test_reconstrucao_do_cache_mantem_a_busca_com_formulacoes(
+    monkeypatch: pytest.MonkeyPatch, fabrica_reescritor: FabricaReescritorFalso
+) -> None:
+    fabrica_reescritor.reescritor = ReescritorFalso((FORMULACAO,))
+    _montar(monkeypatch, ProvedorPorDimensao([3])).responder(PERGUNTA)
+    fabrica_reescritor.reescritor = ReescritorFalso((FORMULACAO,))
+    provedor = ProvedorPorDimensao([5])
+    assistente = _montar(monkeypatch, provedor)
+
+    resposta = assistente.responder(PERGUNTA)
+
+    assert resposta.evidencia_suficiente
+    # Dimensão errada falha antes do adaptador: o reescritor roda só depois da reconstrução.
+    assert provedor.pedidos == [(PERGUNTA,), TEXTOS_INDEXAVEIS, (PERGUNTA,), (FORMULACAO,)]
+    assert fabrica_reescritor.reescritor.perguntas == [PERGUNTA]
+
+
 # Montagem a partir do ambiente
 
 
@@ -252,6 +391,7 @@ def test_montar_do_ambiente_usa_a_configuracao_carregada_do_ambiente(
         modelo_embedding=CONFIGURACAO.modelo_embedding,
         limiar_similaridade=CONFIGURACAO.limiar_similaridade,
         top_k=CONFIGURACAO.top_k,
+        numero_reformulacoes=CONFIGURACAO.numero_reformulacoes,
         pasta_documentos=CONFIGURACAO.pasta_documentos,
         tamanho_maximo_chunk=CONFIGURACAO.tamanho_maximo_chunk,
         timeout_segundos=CONFIGURACAO.timeout_segundos,

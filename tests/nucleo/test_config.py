@@ -16,6 +16,7 @@ from config import (
     PADRAO_LIMIAR_SIMILARIDADE,
     PADRAO_MODELO_EMBEDDING,
     PADRAO_MODELO_GERACAO,
+    PADRAO_NUMERO_REFORMULACOES,
     PADRAO_PASTA_DOCUMENTOS,
     PADRAO_TAMANHO_MAXIMO_CHUNK,
     PADRAO_TIMEOUT_SEGUNDOS,
@@ -35,6 +36,7 @@ CHAVES_DO_PROJETO = (
     "MODELO_EMBEDDING",
     "LIMIAR_SIMILARIDADE",
     "TOP_K",
+    "NUMERO_REFORMULACOES",
     "PASTA_DOCUMENTOS",
     "TAMANHO_MAXIMO_CHUNK",
     "TIMEOUT_SEGUNDOS",
@@ -54,6 +56,7 @@ def test_carrega_todos_os_valores_do_ambiente_injetado() -> None:
         "MODELO_EMBEDDING": "modelo-embedding-teste",
         "LIMIAR_SIMILARIDADE": "0.5",
         "TOP_K": "7",
+        "NUMERO_REFORMULACOES": "2",
         "PASTA_DOCUMENTOS": str(RAIZ_PROJETO / "outra_pasta"),
         "TAMANHO_MAXIMO_CHUNK": "800",
         "TIMEOUT_SEGUNDOS": "12.5",
@@ -67,6 +70,7 @@ def test_carrega_todos_os_valores_do_ambiente_injetado() -> None:
         modelo_embedding="modelo-embedding-teste",
         limiar_similaridade=0.5,
         top_k=7,
+        numero_reformulacoes=2,
         pasta_documentos=RAIZ_PROJETO / "outra_pasta",
         tamanho_maximo_chunk=800,
         timeout_segundos=12.5,
@@ -81,8 +85,13 @@ def test_usa_valores_padrao_quando_somente_a_chave_e_informada() -> None:
     assert configuracao.modelo_embedding == PADRAO_MODELO_EMBEDDING
     assert configuracao.limiar_similaridade == PADRAO_LIMIAR_SIMILARIDADE
     assert configuracao.top_k == PADRAO_TOP_K
+    assert configuracao.numero_reformulacoes == PADRAO_NUMERO_REFORMULACOES
     assert configuracao.tamanho_maximo_chunk == PADRAO_TAMANHO_MAXIMO_CHUNK
     assert configuracao.timeout_segundos == PADRAO_TIMEOUT_SEGUNDOS
+
+
+def test_padrao_de_reformulacoes_e_tres_como_no_adr_010() -> None:
+    assert PADRAO_NUMERO_REFORMULACOES == 3
 
 
 def test_pasta_relativa_e_resolvida_a_partir_da_raiz_do_projeto() -> None:
@@ -261,6 +270,7 @@ CAMPOS_COM_PADRAO = (
     "MODELO_EMBEDDING",
     "LIMIAR_SIMILARIDADE",
     "TOP_K",
+    "NUMERO_REFORMULACOES",
     "PASTA_DOCUMENTOS",
     "TAMANHO_MAXIMO_CHUNK",
     "TIMEOUT_SEGUNDOS",
@@ -353,6 +363,39 @@ def test_tamanho_chunk_no_teto_superior_e_aceito() -> None:
     configuracao = carregar_configuracao({**AMBIENTE_MINIMO, "TAMANHO_MAXIMO_CHUNK": "10000"})
 
     assert configuracao.tamanho_maximo_chunk == 10000
+
+
+# --- ADR-010: NUMERO_REFORMULACOES, faixa de 0 a 5 (0 desliga a reescrita) ---
+
+
+@pytest.mark.parametrize("valor", ["0", "1", "5"], ids=["desligado", "um", "maximo"])
+def test_numero_de_reformulacoes_nos_limites_e_aceito(valor: str) -> None:
+    configuracao = carregar_configuracao({**AMBIENTE_MINIMO, "NUMERO_REFORMULACOES": valor})
+
+    assert configuracao.numero_reformulacoes == int(valor)
+
+
+@pytest.mark.parametrize("valor", ["6", "-1", "100"], ids=["acima", "negativo", "muito_acima"])
+def test_numero_de_reformulacoes_fora_da_faixa_lanca_erro_citando_a_variavel(valor: str) -> None:
+    with pytest.raises(ConfiguracaoInvalida, match="NUMERO_REFORMULACOES deve estar entre 0 e 5"):
+        carregar_configuracao({**AMBIENTE_MINIMO, "NUMERO_REFORMULACOES": valor})
+
+
+@pytest.mark.parametrize("valor", ["dois", "2.5", "3 formulacoes"])
+def test_numero_de_reformulacoes_que_nao_e_inteiro_lanca_erro_citando_a_variavel(
+    valor: str,
+) -> None:
+    with pytest.raises(ConfiguracaoInvalida, match="NUMERO_REFORMULACOES"):
+        carregar_configuracao({**AMBIENTE_MINIMO, "NUMERO_REFORMULACOES": valor})
+
+
+def test_numero_de_reformulacoes_de_valor_invalido_nao_expoe_o_valor_digitado() -> None:
+    valor_errado = "valor-digitado-por-engano"
+
+    with pytest.raises(ConfiguracaoInvalida) as excinfo:
+        carregar_configuracao({**AMBIENTE_MINIMO, "NUMERO_REFORMULACOES": valor_errado})
+
+    assert valor_errado not in str(excinfo.value)
 
 
 # --- M-12: expansão de `~` em PASTA_DOCUMENTOS ---

@@ -21,6 +21,13 @@ class ErroGeracao(ErroAssistente):
     """Falha na chamada ao modelo de linguagem."""
 
 
+class ErroReescrita(ErroAssistente):
+    """Falha ao reescrever a pergunta com o modelo de linguagem (ADR-010).
+
+    Não herda de `ErroBusca`: a falha está na etapa de linguagem, não no índice.
+    """
+
+
 class ConfiguracaoInvalida(ErroAssistente):
     """Configuração ausente ou inválida. A mensagem cita o nome da variável, nunca o valor."""
 

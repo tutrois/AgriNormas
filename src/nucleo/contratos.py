@@ -75,6 +75,22 @@ class Buscador(Protocol):
         ...
 
 
+class ReescritorConsulta(Protocol):
+    """Propõe formulações alternativas de uma pergunta, para ampliar a recuperação (ADR-010)."""
+
+    def reescrever(self, pergunta: str) -> tuple[str, ...]:
+        """Devolve até N formulações alternativas da pergunta.
+
+        - No máximo N formulações, sem repetição entre si e sem textos vazios. N é definido
+          pela implementação (ex.: no construtor). Com N=0 devolve `()`.
+        - A pergunta original não entra no retorno. Quem busca a inclui sempre (regra de
+          fusão do ADR-010), e nenhuma implementação pode substituí-la por ela mesma.
+        - Pergunta vazia ou só com espaços devolve `()` sem chamar o modelo (ADR-007).
+        - Levanta `ErroReescrita` em falha.
+        """
+        ...
+
+
 class GeradorResposta(Protocol):
     """Gera uma resposta fundamentada apenas nos trechos recebidos."""
 

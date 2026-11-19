@@ -134,12 +134,14 @@ def _json_do_modelo(texto: str, fontes: list[str], evidencia: bool) -> str:
 
 
 def _configuracao(pasta: Path) -> Configuracao:
+    # NUMERO_REFORMULACOES=0: sem reescritor, que faria chamadas reais à API (ADR-010).
     return carregar_configuracao(
         ambiente={
             "OPENAI_API_KEY": CHAVE_FICTICIA,
             "PASTA_DOCUMENTOS": str(pasta),
             "LIMIAR_SIMILARIDADE": "0.35",
             "TOP_K": "4",
+            "NUMERO_REFORMULACOES": "0",
         }
     )
 

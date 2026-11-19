@@ -29,11 +29,14 @@ PADRAO_TOP_K = 4
 PADRAO_PASTA_DOCUMENTOS = "base_conhecimento"
 PADRAO_TAMANHO_MAXIMO_CHUNK = 1200
 PADRAO_TIMEOUT_SEGUNDOS = 30.0
+PADRAO_NUMERO_REFORMULACOES = 3
 
 TOP_K_MINIMO = 1
 TOP_K_MAXIMO = 50
 TAMANHO_CHUNK_MINIMO = 100
 TAMANHO_CHUNK_MAXIMO = 10000
+NUMERO_REFORMULACOES_MINIMO = 0
+NUMERO_REFORMULACOES_MAXIMO = 5
 
 
 @dataclass(frozen=True, repr=False)
@@ -45,6 +48,7 @@ class Configuracao:
     modelo_embedding: str
     limiar_similaridade: float
     top_k: int
+    numero_reformulacoes: int
     pasta_documentos: Path
     tamanho_maximo_chunk: int
     timeout_segundos: float
@@ -73,6 +77,13 @@ def carregar_configuracao(
         modelo_embedding=_texto(valores, "MODELO_EMBEDDING", PADRAO_MODELO_EMBEDDING),
         limiar_similaridade=_limiar(valores),
         top_k=_inteiro_entre(valores, "TOP_K", PADRAO_TOP_K, TOP_K_MINIMO, TOP_K_MAXIMO),
+        numero_reformulacoes=_inteiro_entre(
+            valores,
+            "NUMERO_REFORMULACOES",
+            PADRAO_NUMERO_REFORMULACOES,
+            NUMERO_REFORMULACOES_MINIMO,
+            NUMERO_REFORMULACOES_MAXIMO,
+        ),
         pasta_documentos=_pasta_documentos(valores),
         tamanho_maximo_chunk=_inteiro_entre(
             valores,
