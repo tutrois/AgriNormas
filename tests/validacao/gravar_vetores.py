@@ -10,7 +10,8 @@ Uso (na raiz do projeto):
     .venv\\Scripts\\python.exe tests\\validacao\\gravar_vetores.py
 
 Chaves: o SHA-256 do texto enviado ao provedor, exatamente como o `montar_assistente` envia
-(`texto_indexavel` para as seções e o texto da pergunta para as perguntas).
+(`entradas_indexaveis(..., perguntas_faq=True)` para as seções e títulos de FAQ, e o texto da
+pergunta para as perguntas).
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ RAIZ_PROJETO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(RAIZ_PROJETO / "src"))
 
 from busca.calibracao import ler_perguntas_validacao  # noqa: E402
-from busca.indexacao import texto_indexavel  # noqa: E402
+from busca.indexacao import entradas_indexaveis  # noqa: E402
 from busca.provedor_openai import ProvedorEmbeddingOpenAI  # noqa: E402
 from composicao import carregar_secoes  # noqa: E402
 from config import carregar_configuracao  # noqa: E402
@@ -50,7 +51,9 @@ def main() -> None:
     configuracao = carregar_configuracao()
     secoes = carregar_secoes(PASTA_DOCUMENTOS, TAMANHO_MAXIMO_CHUNK)
     perguntas = ler_perguntas_validacao(CAMINHO_PERGUNTAS)
-    textos = [texto_indexavel(secao) for secao in secoes] + [p.texto for p in perguntas]
+    textos = [e.texto for e in entradas_indexaveis(secoes, perguntas_faq=True)] + [
+        p.texto for p in perguntas
+    ]
 
     provedor = ProvedorEmbeddingOpenAI(
         modelo=MODELO_EMBEDDING,
@@ -67,7 +70,10 @@ def main() -> None:
         modelo=np.array(MODELO_EMBEDDING),
     )
     logger.info(
-        "Gravados %d vetores (%d seções e %d perguntas).", len(textos), len(secoes), len(perguntas)
+        "Gravados %d vetores (%d entradas de seção, com títulos de FAQ, e %d perguntas).",
+        len(textos),
+        len(textos) - len(perguntas),
+        len(perguntas),
     )
 
 

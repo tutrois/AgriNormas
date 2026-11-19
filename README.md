@@ -157,7 +157,7 @@ A suíte offline é o padrão. Os casos marcados como `xfail` (falha esperada) s
 
 ### Perguntas de validação
 
-As seis perguntas usadas para validar o assistente, com as respostas de referência, estão em [tests/validacao/perguntas.md](tests/validacao/perguntas.md). A pergunta 6 (limite de combustível por viagem) deve receber a resposta de que **não há evidência nos documentos**.
+As seis perguntas usadas para validar o assistente, com as respostas de referência, estão em [tests/validacao/perguntas.md](tests/validacao/perguntas.md). A pergunta 6 (limite de combustível por viagem) deve receber a resposta de que o documento **não estabelece limite mensal de combustível e não trata de limite por viagem**, citando FRO-POL-002 §faq-5.
 
 Na integração com a API real, as perguntas 1, 5 e 6 passam. As perguntas 2, 3 e 4 seguem como `xfail`. Essas medições foram feitas com `TOP_K` 6, valor do `.env` local. Com `TOP_K` 4, que é o padrão do `.env.example`, a pergunta 4 também perde a seção RH-PRO-003 §3.
 

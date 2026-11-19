@@ -1,6 +1,6 @@
-"""Suíte de validação das seis perguntas de `perguntas.md` (HIST-022).
+"""Suíte de validação das sete perguntas de `perguntas.md` (HIST-022).
 
-Fonte única: as perguntas, as fontes esperadas e a frase de recusa vêm de `perguntas.md`.
+Fonte única: as perguntas e as fontes esperadas vêm de `perguntas.md`.
 Nenhum texto de pergunta é copiado para este arquivo.
 
 Dois modos, ambos pela composição real (`montar_assistente_do_ambiente` e `responder`):
@@ -13,6 +13,12 @@ Dois modos, ambos pela composição real (`montar_assistente_do_ambiente` e `res
 Limite do modo offline: o gerador falso não lê o texto, então o teste verifica a recuperação e a
 validação das fontes, não a redação. O conteúdo da coluna "Deve conter" só é conferido na
 integração, e mesmo assim por inspeção, porque a tabela descreve o conteúdo em paráfrase.
+
+Referências de FAQ (`§faq-N`): `busca.calibracao.ReferenciaSecao` só aceita número de seção, e
+mudar o tipo dela é mudança de contrato (exige ADR). Por isso esta suíte lê a coluna de fontes
+com `ReferenciaTextual`, que guarda a seção como texto (`6`, `2`, `faq-5`). A suíte não usa
+`ler_perguntas_validacao` para as fontes, porque ele descarta `§faq-N` e a pergunta 7 pareceria
+não ter evidência.
 """
 
 from __future__ import annotations
@@ -20,6 +26,7 @@ from __future__ import annotations
 import hashlib
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +34,6 @@ import numpy as np
 import pytest
 
 import composicao
-from busca.calibracao import PerguntaValidacao, ReferenciaSecao, ler_perguntas_validacao
 from nucleo.modelos import Fonte, Resposta, Trecho, Vetor
 
 PASTA_VALIDACAO = Path(__file__).resolve().parent
@@ -48,36 +54,89 @@ CONFIGURACAO_OFFLINE = {
     "PASTA_DOCUMENTOS": str(PASTA_BASE),
 }
 
-PADRAO_VALOR_OU_LIMITE = re.compile(r"\d|R\$|%")
+COLUNAS_PERGUNTA = 4
+PADRAO_DOCUMENTO = re.compile(r"[A-Z]{2,3}-[A-Z]{3}-\d{3}")
+PADRAO_SECAO_TABELA = re.compile(r"§(\d+|faq-\d+)(?:\s*a\s*§(\d+))?")
 PADRAO_CITACAO_ENTRE_COLCHETES = re.compile(r"\[[^\[\]]*\]")
+PADRAO_CODIGO_OU_SECAO = re.compile(r"[A-Z]{2,3}-[A-Z]{3}-\d{3}|§(?:\d+(?:\.\d+)*|faq-\d+)")
+PADRAO_VALOR_OU_LIMITE = re.compile(r"\d|R\$|%")
 
 
-def _perguntas() -> tuple[PerguntaValidacao, ...]:
-    return ler_perguntas_validacao(CAMINHO_PERGUNTAS)
+@dataclass(frozen=True)
+class ReferenciaTextual:
+    """Seção esperada como está na tabela: `6`, `2` ou `faq-5`, com o código do documento."""
+
+    documento: str
+    secao: str
 
 
-def _coluna_deve_conter() -> dict[int, str]:
-    """Lê a terceira coluna de `perguntas.md`, que o parser de produção descarta."""
-    colunas: dict[int, str] = {}
+@dataclass(frozen=True)
+class Pergunta:
+    numero: int
+    texto: str
+    deve_conter: str
+    fontes: tuple[ReferenciaTextual, ...]
+    """Vazio quando a tabela não lista nenhuma seção de apoio."""
+
+
+def _numeros_do_intervalo(inicio: str, fim: str | None) -> tuple[str, ...]:
+    if fim is None:
+        return (inicio,)
+    return tuple(str(numero) for numero in range(int(inicio), int(fim) + 1))
+
+
+def _fontes_da_celula(celula: str) -> tuple[ReferenciaTextual, ...]:
+    """Lê células como `FIN-POL-001 §4, §5; FRO-POL-002 §faq-5` e `RH-PRO-003 §2 a §4`.
+
+    Uma parte sem código herda o documento da parte anterior. Texto sem `§` não gera nada
+    (ex.: `nenhuma`).
+    """
+    referencias: list[ReferenciaTextual] = []
+    documento = ""
+    for parte in celula.split(";"):
+        codigo = PADRAO_DOCUMENTO.search(parte)
+        if codigo is not None:
+            documento = codigo.group(0)
+        for casamento in PADRAO_SECAO_TABELA.finditer(parte):
+            for secao in _numeros_do_intervalo(casamento.group(1), casamento.group(2)):
+                referencias.append(ReferenciaTextual(documento, secao))
+    return tuple(referencias)
+
+
+def _ler_tabela() -> tuple[Pergunta, ...]:
+    """Lê as linhas numeradas de `perguntas.md`. Cabeçalho e texto corrido são ignorados."""
+    perguntas: list[Pergunta] = []
     for linha in CAMINHO_PERGUNTAS.read_text(encoding="utf-8").splitlines():
         celulas = [celula.strip() for celula in linha.strip().strip("|").split("|")]
-        if len(celulas) == 4 and celulas[0].isdigit():
-            colunas[int(celulas[0])] = celulas[2]
-    return colunas
+        if not celulas[0].isdigit():
+            continue
+        assert len(celulas) == COLUNAS_PERGUNTA, f"Pergunta {celulas[0]} com colunas inesperadas"
+        numero, texto, deve_conter, fontes = celulas
+        perguntas.append(Pergunta(int(numero), texto, deve_conter, _fontes_da_celula(fontes)))
+    return tuple(perguntas)
 
 
-PERGUNTAS = _perguntas()
-DEVE_CONTER = _coluna_deve_conter()
-PERGUNTAS_COM_FONTES = tuple(p for p in PERGUNTAS if p.fontes_esperadas)
-PERGUNTAS_SEM_EVIDENCIA = tuple(p for p in PERGUNTAS if not p.fontes_esperadas)
+PERGUNTAS = _ler_tabela()
+PERGUNTAS_COM_FONTES = tuple(p for p in PERGUNTAS if p.fontes)
 PERGUNTAS_COM_MAIS_DE_UM_DOCUMENTO = tuple(
-    p for p in PERGUNTAS if len({r.documento for r in p.fontes_esperadas}) > 1
+    p for p in PERGUNTAS if len({r.documento for r in p.fontes}) > 1
+)
+
+# Perguntas 6 e 7 tratam do mesmo fato (limite de combustível), mas não têm a mesma exigência.
+# Pela decisão de 2026-11-18, nenhuma das duas recusa: ambas citam FRO-POL-002 §faq-5, dizem que o
+# documento não estabelece limite mensal de combustível e não informam valor, número, R$ nem
+# percentual. Só a pergunta 6 tem período ("por viagem"), então só ela exige a menção a limite por
+# viagem. A pergunta 7 não tem período e não deve exigir essa frase.
+NUMEROS_LIMITE_COMBUSTIVEL: tuple[int, ...] = (6, 7)
+PERGUNTAS_LIMITE_COMBUSTIVEL = tuple(p for p in PERGUNTAS if p.numero in NUMEROS_LIMITE_COMBUSTIVEL)
+NUMEROS_EXIGEM_LIMITE_POR_VIAGEM: tuple[int, ...] = (6,)
+PERGUNTAS_EXIGEM_LIMITE_POR_VIAGEM = tuple(
+    p for p in PERGUNTAS if p.numero in NUMEROS_EXIGEM_LIMITE_POR_VIAGEM
 )
 
 # Casos conhecidos que falham hoje, com o bug registrado no relatório da HIST-022. A marca é
 # `xfail(strict=True)`: ela só registra a falha conhecida, não altera o critério. Quando o bug
 # for corrigido, a suíte acusa (XPASS), e a marca deve sair.
-# A pergunta 6 não tem marca: a falha dela é intermitente, e uma marca estrita ficaria instável.
 # A busca usa só cosseno: um trecho entra apenas se a similaridade chegar ao limiar 0,60.
 # Offline o TOP_K é fixo em 4, então a pergunta 4 também perde RH-PRO-003 §3 por corte de top-k
 # (com TOP_K 6, como no `.env`, §3 entra). Na integração só resta o §4 abaixo do limiar.
@@ -91,14 +150,22 @@ BUGS_INTEGRACAO: dict[int, str] = {
     3: "BUG-1: FIN-POL-001 §4 tem cosseno 0,41, abaixo do limiar 0,60, e não é recuperada",
     4: "BUG-3: RH-PRO-003 §4 tem cosseno 0,44, abaixo do limiar 0,60, e não é recuperada",
 }
+# Limitação conhecida (decisão do usuário): o critério de "mensal" fica como está e a falha da
+# pergunta 7 é aceita. Só este teste recebe a marca; a pergunta 6 segue sem xfail.
+BUGS_INTEGRACAO_LIMITE_MENSAL: dict[int, str] = {
+    7: (
+        "BUG-4: a pergunta 7 não diz 'mensal' (2 de 2 execuções com prompt 1.7); "
+        "a resposta generaliza além do trecho FRO-POL-002 §faq-5"
+    ),
+}
 
 
-def _pergunta(numero: int) -> PerguntaValidacao:
+def _pergunta(numero: int) -> Pergunta:
     (pergunta,) = (p for p in PERGUNTAS if p.numero == numero)
     return pergunta
 
 
-def _casos(perguntas: Sequence[PerguntaValidacao], bugs: dict[int, str]) -> list[Any]:
+def _casos(perguntas: Sequence[Pergunta], bugs: dict[int, str]) -> list[Any]:
     return [
         pytest.param(
             pergunta,
@@ -111,26 +178,26 @@ def _casos(perguntas: Sequence[PerguntaValidacao], bugs: dict[int, str]) -> list
     ]
 
 
-def _secao_pertence(secao: str, numero: int) -> bool:
-    """Vale para a seção e suas subseções, como `ReferenciaSecao.corresponde` (ex.: `6.1` é `6`)."""
-    return secao == str(numero) or secao.startswith(f"{numero}.")
+def _secao_pertence(secao: str, referencia: str) -> bool:
+    """Seção numérica vale com as subseções (`6` cobre `6.1`). FAQ (`faq-5`) só por igualdade."""
+    return secao == referencia or secao.startswith(f"{referencia}.")
 
 
-def _referencias_faltantes(pergunta: PerguntaValidacao, resposta: Resposta) -> list[str]:
+def _referencias_faltantes(pergunta: Pergunta, resposta: Resposta) -> list[str]:
     return [
-        f"{referencia.documento} §{referencia.numero_secao}"
-        for referencia in pergunta.fontes_esperadas
+        f"{referencia.documento} §{referencia.secao}"
+        for referencia in pergunta.fontes
         if not any(
             fonte.documento == referencia.documento
-            and _secao_pertence(fonte.secao, referencia.numero_secao)
+            and _secao_pertence(fonte.secao, referencia.secao)
             for fonte in resposta.fontes
         )
     ]
 
 
-def _cita_secao_exata(resposta: Resposta, referencia: ReferenciaSecao) -> bool:
+def _cita_secao_exata(resposta: Resposta, referencia: ReferenciaTextual) -> bool:
     return any(
-        fonte.documento == referencia.documento and fonte.secao == str(referencia.numero_secao)
+        fonte.documento == referencia.documento and fonte.secao == referencia.secao
         for fonte in resposta.fontes
     )
 
@@ -139,14 +206,12 @@ def _documentos(resposta: Resposta) -> set[str]:
     return {fonte.documento for fonte in resposta.fontes}
 
 
-def _frase_sem_evidencia(pergunta: PerguntaValidacao) -> str:
-    return DEVE_CONTER[pergunta.numero]
-
-
 def _tem_valor_ou_limite(texto: str) -> bool:
-    """Procura números, R$ e % fora das citações, que trazem códigos como `FRO-POL-002`."""
+    """Procura números, R$ e % fora das citações. Códigos de documento e de seção (`FRO-POL-002`,
+    `§faq-5`) não contam como valor."""
     sem_citacoes = PADRAO_CITACAO_ENTRE_COLCHETES.sub("", texto)
-    return PADRAO_VALOR_OU_LIMITE.search(sem_citacoes) is not None
+    sem_codigos = PADRAO_CODIGO_OU_SECAO.sub("", sem_citacoes)
+    return PADRAO_VALOR_OU_LIMITE.search(sem_codigos) is not None
 
 
 class ProvedorGravado:
@@ -207,15 +272,46 @@ def respostas_integracao() -> dict[int, Resposta]:
     return {p.numero: assistente.responder(p.texto) for p in PERGUNTAS}
 
 
-# Tabela
+# Leitura da tabela
 
 
-def test_tabela_tem_as_seis_perguntas_numeradas_de_um_a_seis() -> None:
-    assert [p.numero for p in PERGUNTAS] == [1, 2, 3, 4, 5, 6]
+def test_tabela_tem_as_sete_perguntas_numeradas_de_um_a_sete() -> None:
+    assert [p.numero for p in PERGUNTAS] == [1, 2, 3, 4, 5, 6, 7]
 
 
-def test_tabela_tem_recusa_esperada_apenas_na_pergunta_6() -> None:
-    assert [p.numero for p in PERGUNTAS_SEM_EVIDENCIA] == [6]
+def test_tabela_lista_fonte_em_todas_as_perguntas() -> None:
+    assert [p.numero for p in PERGUNTAS if not p.fontes] == []
+
+
+@pytest.mark.parametrize(
+    "pergunta", PERGUNTAS_LIMITE_COMBUSTIVEL, ids=lambda p: f"pergunta-{p.numero}"
+)
+def test_tabela_limite_de_combustivel_aponta_faq_5_de_fro_pol_002(pergunta: Pergunta) -> None:
+    assert pergunta.fontes == (ReferenciaTextual("FRO-POL-002", "faq-5"),)
+
+
+def test_leitor_de_fontes_aceita_secao_de_faq_como_texto() -> None:
+    assert _fontes_da_celula("FRO-POL-002 §faq-5") == (ReferenciaTextual("FRO-POL-002", "faq-5"),)
+
+
+def test_leitor_de_fontes_expande_intervalo_de_secoes_numericas() -> None:
+    assert _fontes_da_celula("RH-PRO-003 §2 a §4") == (
+        ReferenciaTextual("RH-PRO-003", "2"),
+        ReferenciaTextual("RH-PRO-003", "3"),
+        ReferenciaTextual("RH-PRO-003", "4"),
+    )
+
+
+def test_leitor_de_fontes_ignora_celula_sem_secao() -> None:
+    assert _fontes_da_celula("nenhuma; não apresentar trecho") == ()
+
+
+def test_verificacao_de_valor_ignora_codigo_de_documento_e_secao() -> None:
+    assert _tem_valor_ou_limite("Consulte FRO-POL-002 §faq-5 para o procedimento.") is False
+
+
+def test_verificacao_de_valor_detecta_numero_fora_das_citacoes() -> None:
+    assert _tem_valor_ou_limite("O limite é de 300 litros.") is True
 
 
 # Offline
@@ -223,60 +319,44 @@ def test_tabela_tem_recusa_esperada_apenas_na_pergunta_6() -> None:
 
 @pytest.mark.parametrize("pergunta", _casos(PERGUNTAS_COM_FONTES, BUGS_OFFLINE))
 def test_offline_resposta_cita_todas_as_fontes_esperadas(
-    pergunta: PerguntaValidacao, respostas_offline: dict[int, Resposta]
+    pergunta: Pergunta, respostas_offline: dict[int, Resposta]
 ) -> None:
     faltantes = _referencias_faltantes(pergunta, respostas_offline[pergunta.numero])
 
     assert faltantes == []
 
 
+@pytest.mark.parametrize("pergunta", PERGUNTAS_COM_FONTES, ids=lambda p: f"pergunta-{p.numero}")
+def test_offline_pergunta_com_fonte_nao_recebe_recusa(
+    pergunta: Pergunta, respostas_offline: dict[int, Resposta]
+) -> None:
+    assert respostas_offline[pergunta.numero].evidencia_suficiente is True
+
+
 def test_offline_pergunta_1_cita_a_secao_6_exata_de_fin_pol_001(
     respostas_offline: dict[int, Resposta],
 ) -> None:
-    referencia = _pergunta(1).fontes_esperadas[0]
+    referencia = _pergunta(1).fontes[0]
 
     assert _cita_secao_exata(respostas_offline[1], referencia)
 
 
+@pytest.mark.parametrize(
+    "pergunta", PERGUNTAS_LIMITE_COMBUSTIVEL, ids=lambda p: f"pergunta-{p.numero}"
+)
+def test_offline_limite_de_combustivel_cita_o_faq_5_de_fro_pol_002(
+    pergunta: Pergunta, respostas_offline: dict[int, Resposta]
+) -> None:
+    assert _cita_secao_exata(respostas_offline[pergunta.numero], pergunta.fontes[0])
+
+
 @pytest.mark.parametrize("pergunta", _casos(PERGUNTAS_COM_MAIS_DE_UM_DOCUMENTO, BUGS_OFFLINE))
 def test_offline_pergunta_com_dois_documentos_cita_os_dois(
-    pergunta: PerguntaValidacao, respostas_offline: dict[int, Resposta]
+    pergunta: Pergunta, respostas_offline: dict[int, Resposta]
 ) -> None:
-    documentos_esperados = {r.documento for r in pergunta.fontes_esperadas}
+    documentos_esperados = {r.documento for r in pergunta.fontes}
 
     assert documentos_esperados <= _documentos(respostas_offline[pergunta.numero])
-
-
-@pytest.mark.parametrize("pergunta", PERGUNTAS_SEM_EVIDENCIA, ids=lambda p: f"pergunta-{p.numero}")
-def test_offline_pergunta_sem_evidencia_recebe_recusa(
-    pergunta: PerguntaValidacao, respostas_offline: dict[int, Resposta]
-) -> None:
-    assert respostas_offline[pergunta.numero].evidencia_suficiente is False
-
-
-@pytest.mark.parametrize("pergunta", PERGUNTAS_SEM_EVIDENCIA, ids=lambda p: f"pergunta-{p.numero}")
-def test_offline_pergunta_sem_evidencia_nao_cita_nenhum_trecho(
-    pergunta: PerguntaValidacao, respostas_offline: dict[int, Resposta]
-) -> None:
-    assert respostas_offline[pergunta.numero].fontes == ()
-
-
-@pytest.mark.parametrize("pergunta", PERGUNTAS_SEM_EVIDENCIA, ids=lambda p: f"pergunta-{p.numero}")
-def test_offline_pergunta_sem_evidencia_diz_que_nao_ha_evidencia(
-    pergunta: PerguntaValidacao, respostas_offline: dict[int, Resposta]
-) -> None:
-    texto = respostas_offline[pergunta.numero].texto
-
-    assert _frase_sem_evidencia(pergunta).casefold() in texto.casefold()
-
-
-@pytest.mark.parametrize("pergunta", PERGUNTAS_SEM_EVIDENCIA, ids=lambda p: f"pergunta-{p.numero}")
-def test_offline_pergunta_sem_evidencia_nao_traz_valor_ou_limite(
-    pergunta: PerguntaValidacao, respostas_offline: dict[int, Resposta]
-) -> None:
-    texto = respostas_offline[pergunta.numero].texto
-
-    assert _tem_valor_ou_limite(texto) is False
 
 
 # Integração (API real)
@@ -285,7 +365,7 @@ def test_offline_pergunta_sem_evidencia_nao_traz_valor_ou_limite(
 @pytest.mark.integracao
 @pytest.mark.parametrize("pergunta", _casos(PERGUNTAS_COM_FONTES, BUGS_INTEGRACAO))
 def test_integracao_resposta_cita_todas_as_fontes_esperadas(
-    pergunta: PerguntaValidacao, respostas_integracao: dict[int, Resposta]
+    pergunta: Pergunta, respostas_integracao: dict[int, Resposta]
 ) -> None:
     faltantes = _referencias_faltantes(pergunta, respostas_integracao[pergunta.numero])
 
@@ -293,55 +373,73 @@ def test_integracao_resposta_cita_todas_as_fontes_esperadas(
 
 
 @pytest.mark.integracao
+@pytest.mark.parametrize("pergunta", PERGUNTAS_COM_FONTES, ids=lambda p: f"pergunta-{p.numero}")
+def test_integracao_pergunta_com_fonte_nao_recebe_recusa(
+    pergunta: Pergunta, respostas_integracao: dict[int, Resposta]
+) -> None:
+    assert respostas_integracao[pergunta.numero].evidencia_suficiente is True
+
+
+@pytest.mark.integracao
 def test_integracao_pergunta_1_cita_a_secao_6_exata_de_fin_pol_001(
     respostas_integracao: dict[int, Resposta],
 ) -> None:
-    referencia = _pergunta(1).fontes_esperadas[0]
+    referencia = _pergunta(1).fontes[0]
 
     assert _cita_secao_exata(respostas_integracao[1], referencia)
 
 
 @pytest.mark.integracao
-@pytest.mark.parametrize("pergunta", _casos(PERGUNTAS_COM_MAIS_DE_UM_DOCUMENTO, BUGS_INTEGRACAO))
-def test_integracao_pergunta_com_dois_documentos_cita_os_dois(
-    pergunta: PerguntaValidacao, respostas_integracao: dict[int, Resposta]
+@pytest.mark.parametrize(
+    "pergunta", PERGUNTAS_LIMITE_COMBUSTIVEL, ids=lambda p: f"pergunta-{p.numero}"
+)
+def test_integracao_limite_de_combustivel_cita_o_faq_5_de_fro_pol_002(
+    pergunta: Pergunta, respostas_integracao: dict[int, Resposta]
 ) -> None:
-    documentos_esperados = {r.documento for r in pergunta.fontes_esperadas}
-
-    assert documentos_esperados <= _documentos(respostas_integracao[pergunta.numero])
+    assert _cita_secao_exata(respostas_integracao[pergunta.numero], pergunta.fontes[0])
 
 
 @pytest.mark.integracao
-@pytest.mark.parametrize("pergunta", PERGUNTAS_SEM_EVIDENCIA, ids=lambda p: f"pergunta-{p.numero}")
-def test_integracao_pergunta_sem_evidencia_recebe_recusa(
-    pergunta: PerguntaValidacao, respostas_integracao: dict[int, Resposta]
-) -> None:
-    assert respostas_integracao[pergunta.numero].evidencia_suficiente is False
-
-
-@pytest.mark.integracao
-@pytest.mark.parametrize("pergunta", PERGUNTAS_SEM_EVIDENCIA, ids=lambda p: f"pergunta-{p.numero}")
-def test_integracao_pergunta_sem_evidencia_nao_cita_nenhum_trecho(
-    pergunta: PerguntaValidacao, respostas_integracao: dict[int, Resposta]
-) -> None:
-    assert respostas_integracao[pergunta.numero].fontes == ()
-
-
-@pytest.mark.integracao
-@pytest.mark.parametrize("pergunta", PERGUNTAS_SEM_EVIDENCIA, ids=lambda p: f"pergunta-{p.numero}")
-def test_integracao_pergunta_sem_evidencia_diz_que_nao_ha_evidencia(
-    pergunta: PerguntaValidacao, respostas_integracao: dict[int, Resposta]
-) -> None:
-    texto = respostas_integracao[pergunta.numero].texto
-
-    assert _frase_sem_evidencia(pergunta).casefold() in texto.casefold()
-
-
-@pytest.mark.integracao
-@pytest.mark.parametrize("pergunta", PERGUNTAS_SEM_EVIDENCIA, ids=lambda p: f"pergunta-{p.numero}")
-def test_integracao_pergunta_sem_evidencia_nao_traz_valor_ou_limite(
-    pergunta: PerguntaValidacao, respostas_integracao: dict[int, Resposta]
+@pytest.mark.parametrize(
+    "pergunta", PERGUNTAS_LIMITE_COMBUSTIVEL, ids=lambda p: f"pergunta-{p.numero}"
+)
+def test_integracao_limite_de_combustivel_nao_traz_valor_ou_limite(
+    pergunta: Pergunta, respostas_integracao: dict[int, Resposta]
 ) -> None:
     texto = respostas_integracao[pergunta.numero].texto
 
     assert _tem_valor_ou_limite(texto) is False
+
+
+@pytest.mark.integracao
+@pytest.mark.parametrize(
+    "pergunta", _casos(PERGUNTAS_LIMITE_COMBUSTIVEL, BUGS_INTEGRACAO_LIMITE_MENSAL)
+)
+def test_integracao_limite_de_combustivel_menciona_que_nao_ha_limite_mensal(
+    pergunta: Pergunta, respostas_integracao: dict[int, Resposta]
+) -> None:
+    texto = respostas_integracao[pergunta.numero].texto
+
+    assert "mensal" in texto.casefold(), "termo 'mensal' ausente da resposta"
+
+
+@pytest.mark.integracao
+@pytest.mark.parametrize(
+    "pergunta", PERGUNTAS_EXIGEM_LIMITE_POR_VIAGEM, ids=lambda p: f"pergunta-{p.numero}"
+)
+def test_integracao_limite_de_combustivel_com_periodo_menciona_que_nao_trata_de_limite_por_viagem(
+    pergunta: Pergunta, respostas_integracao: dict[int, Resposta]
+) -> None:
+    texto = respostas_integracao[pergunta.numero].texto
+
+    assert "por viagem" in texto.casefold(), "expressão 'por viagem' ausente da resposta"
+
+
+@pytest.mark.integracao
+@pytest.mark.parametrize("pergunta", _casos(PERGUNTAS_COM_MAIS_DE_UM_DOCUMENTO, BUGS_INTEGRACAO))
+def test_integracao_pergunta_com_dois_documentos_cita_os_dois(
+    pergunta: Pergunta, respostas_integracao: dict[int, Resposta]
+) -> None:
+    documentos_esperados = {r.documento for r in pergunta.fontes}
+
+    assert documentos_esperados <= _documentos(respostas_integracao[pergunta.numero])
