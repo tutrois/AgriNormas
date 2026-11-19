@@ -72,3 +72,43 @@ class Resposta:
     def sem_evidencia(cls) -> Resposta:
         """Resposta padrão para quando os documentos não sustentam uma resposta."""
         return cls(texto=MENSAGEM_SEM_EVIDENCIA, fontes=(), evidencia_suficiente=False)
+
+
+# Documentos da base, como a interface os exibe (sem dependência de pypdf).
+@dataclass(frozen=True)
+class DocumentoDaBase:
+    """Documento da base de conhecimento, como a interface o exibe."""
+
+    arquivo: str
+    """Nome do arquivo, ex.: `Politica_Reembolso.pdf`."""
+    codigo: str
+    """Código do documento, ex.: `FIN-POL-001`. Vazio se o PDF não pôde ser lido."""
+    titulo: str
+    """Título extraído do PDF ou, se ilegível, o nome do arquivo sem extensão."""
+    versao: str
+    """Versão, ex.: `1.0`. Vazia se o PDF não pôde ser lido."""
+
+
+@dataclass(frozen=True)
+class SecaoDoDocumento:
+    """Seção de um documento, pronta para exibição."""
+
+    numero: str
+    """Número da seção, ex.: `6`, `3.1` ou `faq-5`."""
+    titulo: str
+    """Título da seção; para FAQ, a pergunta."""
+    texto: str
+    """Corpo da seção, sem as linhas de título que o chunker inclui no começo."""
+    tipo: str
+    """Tipo da seção no chunker, ex.: `normal`, `excecao` ou `faq`."""
+
+
+@dataclass(frozen=True)
+class ConteudoDoDocumento:
+    """Documento da base com o conteúdo dividido em seções."""
+
+    arquivo: str
+    codigo: str
+    titulo: str
+    versao: str
+    secoes: tuple[SecaoDoDocumento, ...]

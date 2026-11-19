@@ -26,6 +26,7 @@ import streamlit as st
 from streamlit.testing.v1 import AppTest
 
 import composicao
+from nucleo import modelos
 from nucleo.assistente import AssistenteRAG
 from nucleo.erros import ConfiguracaoInvalida, ErroBusca, ErroDocumento
 from nucleo.modelos import MENSAGEM_SEM_EVIDENCIA, Fonte, Resposta, Trecho
@@ -139,15 +140,11 @@ def cache_limpo() -> Any:
 
 
 DOCUMENTOS = (
-    composicao.DocumentoDaBase(
+    modelos.DocumentoDaBase(
         "Politica_Reembolso.pdf", "FIN-POL-001", "POLÍTICA DE REEMBOLSO", "1.0"
     ),
-    composicao.DocumentoDaBase(
-        "Politica_Veiculos.pdf", "FRO-POL-002", "POLÍTICA DE VEÍCULOS", "2.1"
-    ),
-    composicao.DocumentoDaBase(
-        "Procedimento_Ferias.pdf", "RH-PRC-003", "PROCEDIMENTO DE FÉRIAS", ""
-    ),
+    modelos.DocumentoDaBase("Politica_Veiculos.pdf", "FRO-POL-002", "POLÍTICA DE VEÍCULOS", "2.1"),
+    modelos.DocumentoDaBase("Procedimento_Ferias.pdf", "RH-PRC-003", "PROCEDIMENTO DE FÉRIAS", ""),
 )
 MENSAGEM_BASE_VAZIA = "Nenhum documento encontrado na base."
 MENSAGEM_BASE_ERRO = "Não foi possível listar os documentos."
@@ -178,15 +175,15 @@ def listagem(monkeypatch: pytest.MonkeyPatch) -> ListagemFalsa:
 
 def _conteudo(
     arquivo: str, codigo: str, secoes: tuple[Any, ...] | None = None, titulo: str | None = None
-) -> composicao.ConteudoDoDocumento:
+) -> modelos.ConteudoDoDocumento:
     """Documento falso: uma seção normal, uma com quebra de linha e uma pergunta frequente."""
     if secoes is None:
         secoes = (
-            composicao.SecaoDoDocumento("1", "Objetivo", "Primeira linha\nSegunda linha", "norma"),
-            composicao.SecaoDoDocumento("2", "Prazo", "Texto do prazo.", "norma"),
-            composicao.SecaoDoDocumento("faq-1", "Como pedir?", "Pelo sistema.", "faq"),
+            modelos.SecaoDoDocumento("1", "Objetivo", "Primeira linha\nSegunda linha", "norma"),
+            modelos.SecaoDoDocumento("2", "Prazo", "Texto do prazo.", "norma"),
+            modelos.SecaoDoDocumento("faq-1", "Como pedir?", "Pelo sistema.", "faq"),
         )
-    return composicao.ConteudoDoDocumento(arquivo, codigo, titulo or arquivo, "1.0", secoes)
+    return modelos.ConteudoDoDocumento(arquivo, codigo, titulo or arquivo, "1.0", secoes)
 
 
 class LeituraFalsa:
@@ -1020,7 +1017,7 @@ def test_texto_hostil_do_documento_e_escapado_na_visualizacao(
     leitura.conteudos["Politica_Reembolso.pdf"] = _conteudo(
         "Politica_Reembolso.pdf",
         hostil,
-        (composicao.SecaoDoDocumento(hostil, hostil, hostil + "\n\n" + hostil, "faq"),),
+        (modelos.SecaoDoDocumento(hostil, hostil, hostil + "\n\n" + hostil, "faq"),),
     )
 
     at = _clicar(_clicar(_abrir(), "destino_base"), "cartao_0")
@@ -1142,7 +1139,7 @@ def test_menu_escapa_markdown_do_titulo_hostil(
     montagens: Montagens, listagem: ListagemFalsa
 ) -> None:
     listagem.documentos = (
-        composicao.DocumentoDaBase("a.pdf", "[x](http://exemplo.invalido)", "<img src=x>", "*1*"),
+        modelos.DocumentoDaBase("a.pdf", "[x](http://exemplo.invalido)", "<img src=x>", "*1*"),
     )
 
     at = _clicar(_abrir(), "destino_base")

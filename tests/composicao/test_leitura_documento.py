@@ -9,12 +9,10 @@ from pathlib import Path
 import pytest
 
 import composicao
-from composicao import (
-    ConteudoDoDocumento,
-    ler_documento_da_base,
-    ler_documento_do_ambiente,
-)
+from composicao import ler_documento_do_ambiente
 from config import PADRAO_TAMANHO_MAXIMO_CHUNK, RAIZ_PROJETO
+from documentos.acesso_base import ler_documento_da_base
+from nucleo.modelos import ConteudoDoDocumento
 
 BASE = RAIZ_PROJETO / "base_conhecimento"
 
@@ -126,16 +124,16 @@ def test_pdf_corrompido_devolve_none_sem_vazar_conteudo(
 ) -> None:
     (tmp_path / "Quebrado.pdf").write_bytes(b"SEGREDO-NO-ARQUIVO nao e pdf")
 
-    with caplog.at_level(logging.WARNING, logger="composicao"):
+    with caplog.at_level(logging.WARNING, logger="documentos.acesso_base"):
         resultado = ler_documento_da_base(tmp_path, "Quebrado.pdf")
 
-    mensagens = [r.getMessage() for r in caplog.records if r.name == "composicao"]
+    mensagens = [r.getMessage() for r in caplog.records if r.name == "documentos.acesso_base"]
     assert resultado is None
     assert mensagens
     assert all(
         "SEGREDO" not in m and "Quebrado" not in m and str(tmp_path) not in m for m in mensagens
     )
-    assert all(r.exc_info is None for r in caplog.records if r.name == "composicao")
+    assert all(r.exc_info is None for r in caplog.records if r.name == "documentos.acesso_base")
 
 
 def test_leitura_bem_sucedida_nao_loga_conteudo(

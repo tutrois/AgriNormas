@@ -15,10 +15,7 @@ repete a pergunta uma única vez.
 
 from __future__ import annotations
 
-import logging
-import re
 from collections.abc import Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
@@ -28,12 +25,12 @@ from busca.cache import EntradaCache, RepositorioCacheVetores, hash_texto
 from busca.indexacao import construir_indice, construir_indice_com_cache, entradas_indexaveis
 from busca.provedor_openai import ProvedorEmbeddingOpenAI
 from config import (
-    PADRAO_TAMANHO_MAXIMO_CHUNK,
     RAIZ_PROJETO,
     Configuracao,
     carregar_configuracao,
     configuracao_dos_documentos,
 )
+from documentos.acesso_base import ler_documento_da_base, listar_documentos_da_base
 from documentos.chunker_secao import ChunkerPorSecao
 from documentos.leitor_pdf import LeitorPdf
 from documentos.limpeza import limpar_paginas
@@ -50,54 +47,13 @@ from nucleo.contratos import (
     ReescritorConsulta,
 )
 from nucleo.erros import ErroDimensaoIndice, ErroDocumento
-from nucleo.modelos import Secao, Trecho, Vetor
+from nucleo.modelos import ConteudoDoDocumento, DocumentoDaBase, Secao, Trecho, Vetor
 
 TAMANHO_LOTE_EMBEDDINGS: Final[int] = 100
 """Textos por pedido ao provedor de embeddings (mesmo valor usado na calibração)."""
 
 CAMINHO_CACHE_VETORES: Final[Path] = RAIZ_PROJETO / "dados" / "indice.npz"
 """Cache dos vetores em disco. Fica em `dados/`, fora do git, e pode ser apagado com segurança."""
-
-_LOG = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class DocumentoDaBase:
-    """Documento da base de conhecimento, como a interface o exibe."""
-
-    arquivo: str
-    """Nome do arquivo, ex.: `Politica_Reembolso.pdf`."""
-    codigo: str
-    """Código do documento, ex.: `FIN-POL-001`. Vazio se o PDF não pôde ser lido."""
-    titulo: str
-    """Título extraído do PDF ou, se ilegível, o nome do arquivo sem extensão."""
-    versao: str
-    """Versão, ex.: `1.0`. Vazia se o PDF não pôde ser lido."""
-
-
-@dataclass(frozen=True)
-class SecaoDoDocumento:
-    """Seção de um documento, pronta para exibição."""
-
-    numero: str
-    """Número da seção, ex.: `6`, `3.1` ou `faq-5`."""
-    titulo: str
-    """Título da seção; para FAQ, a pergunta."""
-    texto: str
-    """Corpo da seção, sem as linhas de título que o chunker inclui no começo."""
-    tipo: str
-    """Tipo da seção no chunker, ex.: `normal`, `excecao` ou `faq`."""
-
-
-@dataclass(frozen=True)
-class ConteudoDoDocumento:
-    """Documento da base com o conteúdo dividido em seções."""
-
-    arquivo: str
-    codigo: str
-    titulo: str
-    versao: str
-    secoes: tuple[SecaoDoDocumento, ...]
 
 
 def montar_assistente(configuracao: Configuracao) -> AssistenteRAG:
@@ -159,16 +115,6 @@ def listar_documentos_do_ambiente() -> tuple[DocumentoDaBase, ...]:
     return listar_documentos_da_base(configuracao_dos_documentos()[0])
 
 
-def listar_documentos_da_base(pasta: Path) -> tuple[DocumentoDaBase, ...]:
-    """Lê a primeira página de cada PDF da pasta, em ordem de nome, e devolve a identificação.
-
-    Pasta inexistente ou vazia devolve `()`. PDF com erro de leitura ou de metadados entra com
-    o nome do arquivo como título e código e versão vazios; o aviso no log não cita conteúdo.
-    """
-    leitor = LeitorPdf()
-    return tuple(_documento_da_base(caminho, leitor) for caminho in sorted(pasta.glob("*.pdf")))
-
-
 def ler_documento_do_ambiente(arquivo: str) -> ConteudoDoDocumento | None:
     """Lê um documento da pasta configurada em `PASTA_DOCUMENTOS`, sem exigir a chave da API.
 
@@ -177,85 +123,6 @@ def ler_documento_do_ambiente(arquivo: str) -> ConteudoDoDocumento | None:
     """
     pasta, tamanho_maximo = configuracao_dos_documentos()
     return ler_documento_da_base(pasta, arquivo, tamanho_maximo=tamanho_maximo)
-
-
-def ler_documento_da_base(
-    pasta: Path, arquivo: str, *, tamanho_maximo: int = PADRAO_TAMANHO_MAXIMO_CHUNK
-) -> ConteudoDoDocumento | None:
-    """Devolve o conteúdo do PDF `arquivo` da pasta, dividido nas mesmas seções da busca.
-
-    `arquivo` não é confiável: só é aceito se for exatamente o nome de um `*.pdf` listado
-    diretamente em `pasta`. O caminho lido é o do glob, nunca montado a partir de `arquivo`.
-    Nome inválido, PDF ilegível ou sem seções devolve `None`; o log não cita conteúdo nem caminho.
-    """
-    if not isinstance(arquivo, str):
-        return None
-    caminho = next((c for c in pasta.glob("*.pdf") if c.name == arquivo), None)
-    if caminho is None:
-        return None
-    try:
-        paginas = LeitorPdf().ler(caminho)
-        metadados = extrair_metadados(paginas[0].texto, caminho)
-        secoes = ChunkerPorSecao(tamanho_maximo=tamanho_maximo).dividir(
-            metadados.codigo, limpar_paginas(paginas)
-        )
-    except ErroDocumento, IndexError:
-        _LOG.warning("Não foi possível ler o conteúdo de um documento da base.")
-        return None
-    if not secoes:
-        _LOG.warning("Um documento da base não gerou seções.")
-        return None
-    return ConteudoDoDocumento(
-        arquivo=caminho.name,
-        codigo=metadados.codigo,
-        titulo=metadados.titulo,
-        versao=metadados.versao,
-        secoes=tuple(_secao_do_documento(secao) for secao in secoes),
-    )
-
-
-_CABECALHO_NUMERADO = re.compile(r"^\d+(?:\.\d+)*\.?\s+(?P<resto>\S.*)$")
-
-
-def _secao_do_documento(secao: Secao) -> SecaoDoDocumento:
-    return SecaoDoDocumento(
-        numero=secao.numero,
-        titulo=secao.titulo,
-        texto=_corpo_sem_titulo(secao),
-        tipo=secao.tipo,
-    )
-
-
-def _corpo_sem_titulo(secao: Secao) -> str:
-    """Tira o cabeçalho que o chunker prefixa (seção pai e título); sem essa linha, não altera."""
-    linhas = secao.texto.split("\n")
-    for indice, linha in enumerate(linhas[:3]):
-        if _repete_titulo(linha, secao.titulo):
-            return "\n".join(linhas[indice + 1 :]).strip()
-        if not _CABECALHO_NUMERADO.match(linha):
-            break
-    return secao.texto
-
-
-def _repete_titulo(linha: str, titulo: str) -> bool:
-    casamento = _CABECALHO_NUMERADO.match(linha)
-    candidato = casamento.group("resto") if casamento else linha
-    return candidato.strip() == titulo.strip()
-
-
-def _documento_da_base(caminho: Path, leitor: LeitorDocumento) -> DocumentoDaBase:
-    try:
-        paginas = leitor.ler(caminho)
-        metadados = extrair_metadados(paginas[0].texto, caminho)
-    except ErroDocumento, IndexError:
-        _LOG.warning("Não foi possível ler os metadados de um documento da base.")
-        return DocumentoDaBase(arquivo=caminho.name, codigo="", titulo=caminho.stem, versao="")
-    return DocumentoDaBase(
-        arquivo=caminho.name,
-        codigo=metadados.codigo,
-        titulo=metadados.titulo,
-        versao=metadados.versao,
-    )
 
 
 def carregar_secoes(pasta: Path, tamanho_maximo: int) -> tuple[Secao, ...]:

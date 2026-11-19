@@ -9,8 +9,10 @@ from pathlib import Path
 import pytest
 
 import config
-from composicao import DocumentoDaBase, listar_documentos_da_base, listar_documentos_do_ambiente
+from composicao import listar_documentos_do_ambiente
 from config import RAIZ_PROJETO
+from documentos.acesso_base import listar_documentos_da_base
+from nucleo.modelos import DocumentoDaBase
 
 BASE = RAIZ_PROJETO / "base_conhecimento"
 

@@ -41,8 +41,6 @@ import streamlit as st  # noqa: E402
 from streamlit.delta_generator import DeltaGenerator  # noqa: E402
 
 from composicao import (  # noqa: E402
-    ConteudoDoDocumento,
-    DocumentoDaBase,
     ler_documento_do_ambiente,
     listar_documentos_do_ambiente,
     montar_assistente_do_ambiente,
@@ -68,7 +66,7 @@ from interface.marcacao import (  # noqa: E402
 )
 from nucleo.assistente import AssistenteRAG  # noqa: E402
 from nucleo.erros import ConfiguracaoInvalida, ErroAssistente, PerguntaInvalida  # noqa: E402
-from nucleo.modelos import Fonte, Resposta  # noqa: E402
+from nucleo.modelos import ConteudoDoDocumento, DocumentoDaBase, Fonte, Resposta  # noqa: E402  # noqa: E402
 
 _LOG: Final[logging.Logger] = logging.getLogger(__name__)
 
