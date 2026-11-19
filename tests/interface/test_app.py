@@ -1,4 +1,4 @@
-"""Testes da tela de perguntas (HIST-019 e HIST-020) com `streamlit.testing.v1.AppTest`.
+"""Testes da tela de perguntas (HIST-019, HIST-020 e HIST-030) com `streamlit.testing.v1.AppTest`.
 
 Não chamam a API. `composicao.montar_assistente_do_ambiente` é trocada por um dublê antes de cada
 execução da página. A página importa essa função a cada execução, então a troca vale para o script
@@ -9,11 +9,15 @@ núcleo, com um buscador espião: assim a regra de tamanho é checada no núcleo
 
 O cache do assistente (`st.cache_resource`) é global ao processo, por isso é limpo antes e
 depois de cada teste. Assim o contador de montagens conta só o que o teste fez.
+
+HIST-030: a resposta e a recusa ficam em balões (HTML com texto escapado). Por isso os testes de
+resposta leem o `<div class="agrinormas-resposta">` dentro do HTML, e não mais `st.info`.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +37,11 @@ TIMEOUT_SEGUNDOS = 15
 ROTULO_PERGUNTA = "Pergunta"
 TEXTO_BOTAO = "Enviar pergunta"
 ROTULO_EXPANSOR = "Ver fontes desta resposta"
+ROTULO_USUARIO = "Você"
+ROTULO_ASSISTENTE = "Assistente"
+ROTULO_SEM_EVIDENCIA = "Sem evidência"
+TITULO_BOAS_VINDAS = "Consulte as normas da empresa"
+TEXTO_AJUDA = "Escreva a pergunta em uma frase. A resposta vem só dos documentos da base."
 FONTE = Fonte(documento="FIN-POL-001", secao="3.1", titulo="Prazo de entrega")
 TEXTO_COM_MARKDOWN = (
     "Veja [x](http://exemplo.invalido) e a imagem ![](http://exemplo.invalido/i.png)."
@@ -53,11 +62,20 @@ MENSAGEM_INESPERADA = (
 )
 LIMITE_PERGUNTA = 500
 CLASSE_RESPOSTA = "agrinormas-resposta"
-TITULO_RESPOSTA = "Resposta"
-# Texto do núcleo passa por escape de Markdown antes de st.info e st.warning: cada "." vira "\."
-MENSAGEM_SEM_EVIDENCIA_ESCAPADA = MENSAGEM_SEM_EVIDENCIA.replace(".", "\\.")
+# Texto de aviso do núcleo passa por escape de Markdown antes de st.warning: cada "." vira "\."
 MENSAGEM_PERGUNTA_VAZIA_ESCAPADA = MENSAGEM_PERGUNTA_VAZIA.replace(".", "\\.")
 MENSAGEM_PERGUNTA_LONGA_ESCAPADA = MENSAGEM_PERGUNTA_LONGA.replace(".", "\\.")
+
+PADRAO_RESPOSTA = re.compile(rf'<div class="{CLASSE_RESPOSTA}">.*?</div>', re.DOTALL)
+PADRAO_AUTOR = re.compile(r'<span class="agri-autor[^"]*">([^<]*)</span>')
+PADRAO_SELO = re.compile(r'<span class="agri-selo-sem-evidencia">([^<]*)</span>')
+
+
+def _cria_link_ou_imagem(bloco: str) -> bool:
+    """Link ou imagem criados pela página. O link fixo "Nova conversa" não conta."""
+    if "<img" in bloco:
+        return True
+    return "<a " in bloco and 'class="agri-nova"' not in bloco
 
 
 class AssistenteFalso:
@@ -143,10 +161,23 @@ def _valores(elementos: Any) -> list[str]:
 
 
 def _respostas_em_html(at: AppTest) -> list[str]:
-    """Blocos HTML que contêm a resposta (texto puro). Não inclui o CSS da página."""
-    return [
-        valor for valor in _valores(at.html) if valor.startswith(f'<div class="{CLASSE_RESPOSTA}"')
-    ]
+    """Blocos de texto da resposta (`<div class="agrinormas-resposta">`), em texto puro."""
+    return [m.group(0) for valor in _valores(at.html) for m in PADRAO_RESPOSTA.finditer(valor)]
+
+
+def _autores(at: AppTest) -> list[str]:
+    """Rótulos de autor exibidos como texto, na ordem da conversa."""
+    return [m for valor in _valores(at.html) for m in PADRAO_AUTOR.findall(valor)]
+
+
+def _selos(at: AppTest) -> list[str]:
+    """Selos "Sem evidência" exibidos nos balões."""
+    return [m for valor in _valores(at.html) for m in PADRAO_SELO.findall(valor)]
+
+
+def _html_da_pagina(at: AppTest) -> str:
+    """Todo o HTML renderizado pela página (estilo, topo, balões e boas-vindas)."""
+    return "\n".join(_valores(at.html))
 
 
 def _css_da_pagina(at: AppTest) -> str:
@@ -180,7 +211,26 @@ def test_abre_pagina_com_campo_de_pergunta_e_botao(montagens: Montagens) -> None
 
     assert not at.exception
     assert [campo.label for campo in at.text_input] == [ROTULO_PERGUNTA]
-    assert [botao.label for botao in at.button] == [TEXTO_BOTAO]
+    # O botão de envio vem primeiro; depois, um botão por cartão de sugestão.
+    assert [botao.label for botao in at.button][0] == TEXTO_BOTAO
+    # Um botão de envio e três cartões (Reembolso, Veículos e Férias).
+    assert len(at.button) == 4
+
+
+def test_cartao_de_sugestao_envia_pergunta_pronta_e_some_depois(montagens: Montagens) -> None:
+    at = _abrir()
+    cartao_reembolso = at.button[1]
+    assert "Reembolso" in cartao_reembolso.label
+
+    cartao_reembolso.click()
+    at.run()
+
+    assert not at.exception
+    assert _autores(at) == [ROTULO_USUARIO, ROTULO_ASSISTENTE]
+    assert "Como funciona o reembolso de despesas?" in _html_da_pagina(at)
+    # Com conversa, os cartões saem da tela.
+    assert not any("Reembolso" in botao.label for botao in at.button)
+    assert [botao.label for botao in at.button][0] == TEXTO_BOTAO
 
 
 def test_estado_inicial_nao_mostra_resposta_nem_aviso(montagens: Montagens) -> None:
@@ -194,20 +244,24 @@ def test_estado_inicial_nao_mostra_resposta_nem_aviso(montagens: Montagens) -> N
     assert len(at.text) == 0
     assert _respostas_em_html(at) == []
     assert len(at.header) == 0
+    assert _autores(at) == []
+    assert TITULO_BOAS_VINDAS in _html_da_pagina(at)
 
 
 def test_campo_de_pergunta_tem_rotulo_e_texto_de_ajuda(montagens: Montagens) -> None:
     at = _abrir()
 
     assert at.text_input[0].label == ROTULO_PERGUNTA
-    assert at.text_input[0].proto.help.strip() != ""
+    # Com o rótulo oculto, a ajuda aparece como texto visível no rodapé da barra (HIST-030).
+    assert TEXTO_AJUDA in _html_da_pagina(at)
 
 
 def test_enviar_pergunta_mostra_resposta_e_fontes(montagens: Montagens) -> None:
     at = _perguntar(_abrir(), "Qual é o prazo de entrega?")
 
     assert not at.exception
-    assert _valores(at.header) == [TITULO_RESPOSTA]
+    # Os dois balões aparecem na ordem da conversa, com rótulo em texto.
+    assert _autores(at) == [ROTULO_USUARIO, ROTULO_ASSISTENTE]
     assert _respostas_em_html(at) == [
         f'<div class="{CLASSE_RESPOSTA}">Resposta para: Qual é o prazo de entrega?</div>'
     ]
@@ -253,29 +307,26 @@ def test_texto_da_resposta_nao_vira_link_nem_imagem(montagens: Montagens) -> Non
         "Veja [x](http://exemplo.invalido) e a imagem ![](http://exemplo.invalido/i.png)."
         "</div>"
     ]
-    # Nenhum elemento de link ou imagem é criado pela resposta.
-    assert not any("<a " in bloco or "<img" in bloco for bloco in _valores(at.html))
+    # Nenhum elemento de link ou imagem é criado pela resposta. O único link é "Nova conversa".
+    assert not any(_cria_link_ou_imagem(bloco) for bloco in _valores(at.html))
     # Os blocos Markdown da página são a descrição e a fonte, nunca o texto da resposta.
     blocos_markdown = _valores(at.markdown)
     assert not any("exemplo.invalido" in bloco for bloco in blocos_markdown)
     assert not any("](" in bloco or "![" in bloco for bloco in blocos_markdown)
 
 
-def test_recusa_com_markdown_do_nucleo_recebe_escape(montagens: Montagens) -> None:
-    # AppTest não renderiza Markdown. Este teste prova só o escape do texto passado a `st.info`:
-    # a forma renderizada (link, imagem, autolink) não é verificada aqui. O autolink de URL e
-    # e-mail continua aberto na M-59 do backlog e é medido no navegador (ver o checklist).
+def test_recusa_mostra_o_texto_do_nucleo_literal_e_sem_markdown(montagens: Montagens) -> None:
+    # A recusa vai para um balão de texto puro (HTML escapado), e não para `st.info` com Markdown.
+    # Por isso o texto chega como foi escrito: nada é interpretado, nem escapado com barra.
     montagens.assistente.resposta = Resposta(texto=TEXTO_COM_MARKDOWN, evidencia_suficiente=False)
 
     at = _perguntar(_abrir(), "Qual é a cor do uniforme?")
 
     assert not at.exception
-    valores = _valores(at.info)
-    assert len(valores) == 1
-    # O texto passado a `st.info` tem os colchetes, parênteses e o `!` escapados.
-    assert "\\[x\\]\\(http://exemplo\\.invalido\\)" in valores[0]
-    assert "](" not in valores[0]
-    assert "![" not in valores[0]
+    assert _respostas_em_html(at) == [f'<div class="{CLASSE_RESPOSTA}">{TEXTO_COM_MARKDOWN}</div>']
+    assert _selos(at) == [ROTULO_SEM_EVIDENCIA]
+    assert len(at.info) == 0
+    assert not any(_cria_link_ou_imagem(bloco) for bloco in _valores(at.html))
 
 
 def test_resposta_com_html_vira_texto_escapado(montagens: Montagens) -> None:
@@ -302,6 +353,19 @@ def test_resposta_preserva_quebras_de_linha(montagens: Montagens) -> None:
         f'<div class="{CLASSE_RESPOSTA}">Primeira linha.\nSegunda linha.</div>'
     ]
     assert "white-space: pre-wrap" in _css_da_pagina(at)
+
+
+def test_pergunta_do_usuario_aparece_escapada_no_balao(montagens: Montagens) -> None:
+    pergunta = '<img src=x onerror=alert(1)> & "q"'
+
+    at = _perguntar(_abrir(), pergunta)
+
+    assert not at.exception
+    assert (
+        '<div class="agri-balao agri-balao-usuario">'
+        "&lt;img src=x onerror=alert(1)&gt; &amp; &quot;q&quot;</div>"
+    ) in _html_da_pagina(at)
+    assert "<img" not in _html_da_pagina(at)
 
 
 def test_layout_estreito_tem_margem_de_16_pixels_e_quebra_de_linha(
@@ -333,30 +397,93 @@ def test_css_da_pagina_nao_carrega_recursos_externos(montagens: Montagens) -> No
     assert "@import" not in css
 
 
-def test_titulo_da_resposta_e_nivel_2_sem_pular_do_titulo_da_pagina(
+def test_html_da_pagina_nao_carrega_recursos_externos(montagens: Montagens) -> None:
+    montagens.assistente.resposta = Resposta.sem_evidencia()
+    at = _perguntar(_abrir(), "Qual é a cor do uniforme?")
+
+    html_da_pagina = _html_da_pagina(at)
+    assert "url(" not in html_da_pagina
+    assert "@import" not in html_da_pagina
+    assert "<link" not in html_da_pagina
+    assert "<script" not in html_da_pagina
+    assert not re.search(r'(src|href)="https?:', html_da_pagina)
+
+
+def test_pagina_tem_um_unico_titulo_h1_e_nenhum_cabecalho_do_streamlit(
     montagens: Montagens,
 ) -> None:
     at = _perguntar(_abrir(), "Qual é o prazo de entrega?")
 
     assert not at.exception
-    assert len(at.title) == 1
-    assert _valores(at.header) == [TITULO_RESPOSTA]
+    assert _html_da_pagina(at).count("<h1") == 1
+    assert len(at.header) == 0
     assert len(at.subheader) == 0
+    assert len(at.title) == 0
 
 
-def test_sem_evidencia_mostra_aviso_informativo_sem_fontes(montagens: Montagens) -> None:
+def test_avatares_sao_decorativos_com_aria_hidden_e_iniciais_em_texto(
+    montagens: Montagens,
+) -> None:
+    at = _perguntar(_abrir(), "Qual é o prazo de entrega?")
+
+    avatares = re.findall(r'<span class="agri-avatar[^"]*"[^>]*></span>', _html_da_pagina(at))
+    assert len(avatares) == 2
+    assert all('aria-hidden="true"' in tag for tag in avatares)
+    assert "agri-avatar-usuario" in avatares[0]
+    assert "agri-avatar-assistente" in avatares[1]
+    # Nenhum ícone de fonte na tela: a página não depende de fonte de ícones externa.
+    assert "agri-icone" not in _html_da_pagina(at)
+
+
+def test_barra_lateral_mostra_marca_e_nova_conversa(montagens: Montagens) -> None:
+    at = _abrir()
+
+    assert '<span class="agri-marca" aria-hidden="true">RH</span>' in _html_da_pagina(at)
+    assert '<a class="agri-nova" href="./">Nova conversa</a>' in _html_da_pagina(at)
+
+
+def test_pagina_nao_mostra_titulo_no_topo(montagens: Montagens) -> None:
+    # A referência aprovada não tem título no topo da área principal. A marca fica na barra.
+    at = _abrir()
+
+    assert "<h1>" not in _html_da_pagina(at)
+    assert "reprodu" not in _html_da_pagina(at)
+
+
+def test_autores_aparecem_como_texto_voce_e_assistente(montagens: Montagens) -> None:
+    at = _perguntar(_abrir(), "Qual é o prazo de entrega?")
+
+    assert _autores(at) == [ROTULO_USUARIO, ROTULO_ASSISTENTE]
+    assert "aria-label" not in _html_da_pagina(at)
+
+
+def test_sem_evidencia_mostra_selo_em_texto_em_vez_de_erro(montagens: Montagens) -> None:
     montagens.assistente.resposta = Resposta.sem_evidencia()
 
     at = _perguntar(_abrir(), "Qual é a cor do uniforme?")
 
     assert not at.exception
-    assert _valores(at.header) == [TITULO_RESPOSTA]
-    assert _valores(at.info) == [MENSAGEM_SEM_EVIDENCIA_ESCAPADA]
+    assert _autores(at) == [ROTULO_USUARIO, ROTULO_ASSISTENTE]
+    assert _selos(at) == [ROTULO_SEM_EVIDENCIA]
+    assert _respostas_em_html(at) == [
+        f'<div class="{CLASSE_RESPOSTA}">{MENSAGEM_SEM_EVIDENCIA}</div>'
+    ]
     assert len(at.expander) == 0
+    assert len(at.info) == 0
     assert len(at.text) == 0
-    assert _respostas_em_html(at) == []
     assert len(at.warning) == 0
     assert len(at.error) == 0
+
+
+def test_sem_evidencia_nao_tem_fontes_mesmo_que_o_nucleo_as_devolva(montagens: Montagens) -> None:
+    montagens.assistente.resposta = Resposta(
+        texto=MENSAGEM_SEM_EVIDENCIA, fontes=(FONTE,), evidencia_suficiente=False
+    )
+
+    at = _perguntar(_abrir(), "Qual é a cor do uniforme?")
+
+    assert _selos(at) == [ROTULO_SEM_EVIDENCIA]
+    assert len(at.expander) == 0
 
 
 def test_pergunta_vazia_mostra_aviso_de_pergunta_invalida(montagens: Montagens) -> None:
@@ -370,6 +497,7 @@ def test_pergunta_vazia_mostra_aviso_de_pergunta_invalida(montagens: Montagens) 
     assert len(at.info) == 0
     assert len(at.error) == 0
     assert len(at.header) == 0
+    assert _selos(at) == []
     assert buscador.perguntas == []
 
 
@@ -384,7 +512,11 @@ def test_pergunta_com_500_caracteres_e_aceita(montagens: Montagens) -> None:
     assert len(at.warning) == 0
     assert len(at.error) == 0
     # O buscador espião não encontra nada: a recusa esperada é a de falta de evidência.
-    assert _valores(at.info) == [MENSAGEM_SEM_EVIDENCIA_ESCAPADA]
+    assert _selos(at) == [ROTULO_SEM_EVIDENCIA]
+    assert _respostas_em_html(at) == [
+        f'<div class="{CLASSE_RESPOSTA}">{MENSAGEM_SEM_EVIDENCIA}</div>'
+    ]
+    assert len(at.info) == 0
     assert buscador.perguntas == [pergunta]
 
 
