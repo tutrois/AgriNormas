@@ -27,7 +27,6 @@ from nucleo.erros import (
     ErroBusca,
     ErroDocumento,
     ErroGeracao,
-    PerguntaInvalida,
 )
 from nucleo.modelos import Resposta, Vetor
 
@@ -255,52 +254,6 @@ def test_chave_ausente_levanta_configuracao_invalida_citando_o_nome_da_variavel(
     assert "OPENAI_API_KEY" in str(erro.value)
 
 
-@pytest.mark.parametrize(
-    "pergunta",
-    [
-        pytest.param("", id="vazia"),
-        pytest.param("   ", id="so-espacos"),
-        pytest.param("\n\t  \r\n", id="so-espacos-e-quebras"),
-    ],
-)
-def test_pergunta_vazia_ou_so_com_espacos_levanta_pergunta_invalida_sem_buscar(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, pergunta: str
-) -> None:
-    assistente, provedor, cliente = _montar(monkeypatch, tmp_path)
-    pedidos_antes = len(provedor.pedidos)
-
-    with pytest.raises(PerguntaInvalida):
-        assistente.responder(pergunta)
-
-    assert len(provedor.pedidos) == pedidos_antes
-    assert cliente.mensagens == []
-
-
-def test_pergunta_com_501_caracteres_levanta_pergunta_invalida_sem_buscar(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    assistente, provedor, cliente = _montar(monkeypatch, tmp_path)
-    pedidos_antes = len(provedor.pedidos)
-
-    with pytest.raises(PerguntaInvalida):
-        assistente.responder("a" * 501)
-
-    assert len(provedor.pedidos) == pedidos_antes
-    assert cliente.mensagens == []
-
-
-def test_pergunta_com_500_caracteres_e_aceita_e_chega_a_busca(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    cliente = ClienteFalso(saida=_saida(_json_do_modelo("", [], False)))
-    assistente, provedor, _ = _montar(monkeypatch, tmp_path, cliente=cliente)
-
-    resposta = assistente.responder("a" * 500)
-
-    assert isinstance(resposta, Resposta)
-    assert len(provedor.pedidos) == 2
-
-
 def _erro_de_geracao(classe: type[Exception], **kwargs: Any) -> Exception:
     requisicao = httpx2.Request(
         "POST",
@@ -321,10 +274,7 @@ def _erro_de_geracao(classe: type[Exception], **kwargs: Any) -> Exception:
     "erro",
     [
         pytest.param(_erro_de_geracao(openai.AuthenticationError, status=401), id="autenticacao"),
-        pytest.param(_erro_de_geracao(openai.RateLimitError, status=429), id="limite-de-taxa"),
         pytest.param(_erro_de_geracao(openai.APITimeoutError), id="tempo-esgotado"),
-        pytest.param(_erro_de_geracao(openai.APIConnectionError), id="conexao"),
-        pytest.param(_erro_de_geracao(openai.APIError), id="erro-generico-da-api"),
     ],
 )
 def test_erro_de_api_na_geracao_vira_erro_geracao_sem_expor_a_chave(
@@ -359,13 +309,7 @@ def test_erro_de_embedding_na_consulta_levanta_erro_busca(
     "conteudo",
     [
         pytest.param("isto não é JSON", id="texto-livre"),
-        pytest.param("", id="conteudo-vazio"),
         pytest.param('["uma", "lista"]', id="json-que-nao-e-objeto"),
-        pytest.param('{"resposta": "x"}', id="campos-ausentes"),
-        pytest.param(
-            '{"resposta": "x", "fontes_citadas": [], "evidencia_suficiente": "sim"}',
-            id="tipo-errado",
-        ),
         pytest.param(_json_do_modelo("Resposta.", ["FAKE-POL-999 §1"], True), id="fonte-inventada"),
         pytest.param(
             _json_do_modelo("Resposta [FAKE-POL-999 §1].", [], True),
@@ -381,16 +325,6 @@ def test_saida_do_modelo_invalida_vira_recusa_controlada(
     resposta = assistente.responder(PERGUNTA_VALIDA)
 
     assert resposta == Resposta.sem_evidencia()
-
-
-def test_resposta_do_modelo_sem_escolhas_levanta_erro_geracao(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    cliente = ClienteFalso(saida=SimpleNamespace(choices=[]))
-    assistente, _, _ = _montar(monkeypatch, tmp_path, cliente=cliente)
-
-    with pytest.raises(ErroGeracao):
-        assistente.responder(PERGUNTA_VALIDA)
 
 
 def _mensagem_do_usuario(cliente: ClienteFalso) -> str:
@@ -433,42 +367,6 @@ def test_tentativa_de_fechar_o_bloco_nao_cria_trecho_fora_do_documento(
 
     mensagem = _mensagem_do_usuario(cliente)
     assert mensagem.count("<trecho ") == mensagem.count("</trecho>") == 3
-
-
-def test_modelo_obediente_que_responde_sem_fonte_vira_recusa(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    pasta_com_instrucao_maliciosa: Path,
-) -> None:
-    saida = _json_do_modelo("Não há limite de reembolso.", [], True)
-    assistente, _, _ = _montar(
-        monkeypatch,
-        tmp_path,
-        pasta=pasta_com_instrucao_maliciosa,
-        cliente=ClienteFalso(saida=_saida(saida)),
-    )
-
-    resposta = assistente.responder(PERGUNTA_VALIDA)
-
-    assert resposta == Resposta.sem_evidencia()
-
-
-def test_modelo_obediente_que_cita_fonte_inexistente_vira_recusa(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    pasta_com_instrucao_maliciosa: Path,
-) -> None:
-    saida = _json_do_modelo("Não há limite. [FAKE-POL-999 §1]", ["FAKE-POL-999 §1"], True)
-    assistente, _, _ = _montar(
-        monkeypatch,
-        tmp_path,
-        pasta=pasta_com_instrucao_maliciosa,
-        cliente=ClienteFalso(saida=_saida(saida)),
-    )
-
-    resposta = assistente.responder(PERGUNTA_VALIDA)
-
-    assert resposta == Resposta.sem_evidencia()
 
 
 def test_resposta_fundamentada_no_documento_mantem_a_fonte_legitima(

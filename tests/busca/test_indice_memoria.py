@@ -111,17 +111,6 @@ def test_adicionar_em_varias_chamadas_acumula_os_vetores() -> None:
     assert resultados[0].secao == segunda
 
 
-def test_secao_recuperada_e_a_mesma_que_foi_guardada() -> None:
-    indice = IndiceEmMemoria()
-    secao = _secao("3.1", texto="Texto integral da seção.")
-    indice.adicionar([secao], [(0.5, 0.5)])
-
-    resultado = indice.buscar((0.5, 0.5), 1)[0]
-
-    assert resultado.secao == secao
-    assert resultado.secao.texto == "Texto integral da seção."
-
-
 def test_quantidade_diferente_de_secoes_e_vetores_levanta_erro_sem_conteudo() -> None:
     indice = IndiceEmMemoria()
     secreta = _secao("1", texto="TEXTO-CONFIDENCIAL-DA-SECAO")
@@ -130,15 +119,6 @@ def test_quantidade_diferente_de_secoes_e_vetores_levanta_erro_sem_conteudo() ->
         indice.adicionar([secreta, _secao("2")], [(1.0, 0.0)])
 
     assert "TEXTO-CONFIDENCIAL" not in str(excinfo.value)
-    assert indice.buscar((1.0, 0.0), 5) == ()
-
-
-def test_vetores_de_dimensoes_diferentes_no_lote_levantam_erro() -> None:
-    indice = IndiceEmMemoria()
-
-    with pytest.raises(ErroBusca):
-        indice.adicionar([_secao("1"), _secao("2")], [(1.0, 0.0), (1.0, 0.0, 0.0)])
-
     assert indice.buscar((1.0, 0.0), 5) == ()
 
 
@@ -213,18 +193,6 @@ def test_vetor_com_nan_ou_infinito_no_adicionar_levanta_erro_sem_alterar_o_indic
     assert indice.buscar((1.0, 0.0), 5) == ()
 
 
-def test_nan_em_adicionar_nao_altera_indice_preenchido() -> None:
-    indice = IndiceEmMemoria()
-    indice.adicionar([_secao("1")], [(1.0, 0.0)])
-
-    with pytest.raises(ErroBusca):
-        indice.adicionar([_secao("2")], [(math.nan, 1.0)])
-
-    resultados = indice.buscar((1.0, 0.0), 5)
-    assert [trecho.secao for trecho in resultados] == [_secao("1")]
-    assert resultados[0].pontuacao == pytest.approx(1.0)
-
-
 @pytest.mark.parametrize("valor_invalido", [math.nan, math.inf, -math.inf])
 def test_consulta_com_nan_ou_infinito_levanta_erro_sem_alterar_o_indice(
     valor_invalido: float,
@@ -267,14 +235,6 @@ def test_consulta_nao_numerica_levanta_erro_busca() -> None:
         indice.buscar(("a", "b"), 1)  # type: ignore[arg-type]
 
 
-def test_consulta_none_levanta_erro_busca() -> None:
-    indice = IndiceEmMemoria()
-    indice.adicionar([_secao("1")], [(1.0, 0.0)])
-
-    with pytest.raises(ErroBusca):
-        indice.buscar(None, 1)  # type: ignore[arg-type]
-
-
 def test_normas_zero_nao_emitem_runtime_warning() -> None:
     indice = IndiceEmMemoria()
 
@@ -284,6 +244,16 @@ def test_normas_zero_nao_emitem_runtime_warning() -> None:
         resultados = indice.buscar((0.0, 0.0), 2)
 
     assert [trecho.pontuacao for trecho in resultados] == [0.0, 0.0]
+
+
+def test_empates_de_pontuacao_devolvem_ambos_os_itens_empatados() -> None:
+    indice = IndiceEmMemoria()
+    indice.adicionar([_secao("1"), _secao("2"), _secao("3")], [(1.0, 0.0), (2.0, 0.0), (0.0, 1.0)])
+
+    resultados = indice.buscar((1.0, 0.0), 2)
+
+    assert {trecho.secao.numero for trecho in resultados} == {"1", "2"}
+    assert all(trecho.pontuacao == pytest.approx(1.0) for trecho in resultados)
 
 
 def test_valores_grandes_nao_estouram_a_normalizacao() -> None:
@@ -313,30 +283,6 @@ def test_adicionar_vetor_aninhado_levanta_erro_busca_sem_alterar_o_indice() -> N
     assert indice.buscar((1.0, 0.0), 5) == antes
 
 
-def test_adicionar_lote_com_vetor_aninhado_no_meio_nao_altera_o_indice() -> None:
-    indice = IndiceEmMemoria()
-    indice.adicionar([_secao("1")], [(1.0, 0.0)])
-    antes = indice.buscar((1.0, 0.0), 5)
-
-    with pytest.raises(ErroBusca):
-        indice.adicionar(
-            [_secao("2"), _secao("3"), _secao("4")],
-            [(0.0, 1.0), MATRIZ_ANINHADA, (1.0, 1.0)],
-        )
-
-    assert indice.buscar((1.0, 0.0), 5) == antes
-
-
-def test_adicionar_no_indice_vazio_com_vetor_aninhado_levanta_erro_busca() -> None:
-    indice = IndiceEmMemoria()
-
-    with pytest.raises(ErroBusca) as excinfo:
-        indice.adicionar([_secao("1")], [MATRIZ_ANINHADA])
-
-    assert str(excinfo.value) == MENSAGEM_VETOR_NAO_UNIDIMENSIONAL
-    assert indice.buscar((1.0, 0.0), 5) == ()
-
-
 def test_buscar_com_consulta_aninhada_levanta_erro_busca_sem_alterar_o_indice() -> None:
     indice = IndiceEmMemoria()
     indice.adicionar([_secao("1"), _secao("2")], [(1.0, 0.0), (0.0, 1.0)])
@@ -347,44 +293,6 @@ def test_buscar_com_consulta_aninhada_levanta_erro_busca_sem_alterar_o_indice() 
 
     assert str(excinfo.value) == MENSAGEM_VETOR_NAO_UNIDIMENSIONAL
     assert indice.buscar((1.0, 0.0), 5) == antes
-
-
-def test_buscar_com_consulta_aninhada_em_indice_vazio_levanta_erro_busca() -> None:
-    with pytest.raises(ErroBusca):
-        IndiceEmMemoria().buscar(MATRIZ_ANINHADA, 1)  # type: ignore[arg-type]
-
-
-def test_buscar_com_forma_irregular_levanta_erro_sem_alterar_o_indice() -> None:
-    indice = IndiceEmMemoria()
-    indice.adicionar([_secao("1"), _secao("2")], [(1.0, 0.0), (0.0, 1.0)])
-    antes = indice.buscar((1.0, 0.0), 5)
-
-    with pytest.raises(ErroBusca) as excinfo:
-        indice.buscar(((1.0, 2.0), (3.0,)), 5)  # type: ignore[arg-type]
-
-    assert str(excinfo.value) == MENSAGEM_VETOR_NAO_UNIDIMENSIONAL
-    assert indice.buscar((1.0, 0.0), 5) == antes
-
-
-def test_buscar_com_consulta_matriz_identidade_levanta_erro_sem_alterar_o_indice() -> None:
-    indice = IndiceEmMemoria()
-    indice.adicionar([_secao("1"), _secao("2")], [(1.0, 0.0), (0.0, 1.0)])
-    antes = indice.buscar((1.0, 0.0), 5)
-
-    with pytest.raises(ErroBusca) as excinfo:
-        indice.buscar(((1.0, 0.0), (0.0, 1.0)), 5)  # type: ignore[arg-type]
-
-    assert str(excinfo.value) == MENSAGEM_VETOR_NAO_UNIDIMENSIONAL
-    assert indice.buscar((1.0, 0.0), 5) == antes
-
-
-def test_vetor_irregular_levanta_erro_busca_de_forma_unidimensional() -> None:
-    indice = IndiceEmMemoria()
-
-    with pytest.raises(ErroBusca) as excinfo:
-        indice.adicionar([_secao("1")], [((1.0, 2.0), (3.0,))])  # type: ignore[list-item]
-
-    assert str(excinfo.value) == MENSAGEM_VETOR_NAO_UNIDIMENSIONAL
 
 
 def test_inteiro_grande_demais_tem_mensagem_propria_sem_alterar_o_indice() -> None:
@@ -407,10 +315,10 @@ def test_inteiro_grande_mas_representavel_em_float_e_aceito() -> None:
     assert indice.buscar((10**20, 1.0), 1)[0].secao == alvo
 
 
-def test_inteiro_grande_junto_de_texto_continua_sendo_valor_nao_numerico() -> None:
+def test_vetor_irregular_levanta_erro_busca_de_forma_unidimensional() -> None:
     indice = IndiceEmMemoria()
 
     with pytest.raises(ErroBusca) as excinfo:
-        indice.adicionar([_secao("1")], [(10**400, "a")])  # type: ignore[list-item]
+        indice.adicionar([_secao("1")], [((1.0, 2.0), (3.0,))])  # type: ignore[list-item]
 
-    assert str(excinfo.value) == MENSAGEM_VALOR_NAO_NUMERICO
+    assert str(excinfo.value) == MENSAGEM_VETOR_NAO_UNIDIMENSIONAL

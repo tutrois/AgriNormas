@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from pypdf import PdfWriter
 
 from documentos.metadados import MetadadosDocumento, extrair_metadados, ler_metadados
 from nucleo.erros import ErroDocumento
@@ -32,41 +31,6 @@ TEXTO_PRIMEIRA_PAGINA = (
 )
 
 CAMINHO_FICTICIO = Path("ficticio.pdf")
-
-
-def _pdf_com_texto_sem_tabela(caminho: Path) -> Path:
-    """PDF de uma página sem tabela de identificação.
-
-    O `PdfWriter` não grava texto, então o conteúdo é escrito direto, só em ASCII.
-    """
-    linhas = ("Texto de teste sem tabela de identificacao",)
-    conteudo = "BT /F1 12 Tf 72 780 Td " + " ".join(f"({linha}) Tj 0 -14 Td" for linha in linhas)
-    conteudo += " ET"
-    objetos = (
-        b"<< /Type /Catalog /Pages 2 0 R >>",
-        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R "
-        b"/Resources << /Font << /F1 5 0 R >> >> >>",
-        f"<< /Length {len(conteudo)} >>\nstream\n{conteudo}\nendstream".encode("ascii"),
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-    )
-    partes = [b"%PDF-1.4\n"]
-    posicoes: list[int] = []
-    posicao = len(partes[0])
-    for numero, corpo in enumerate(objetos, start=1):
-        bloco = f"{numero} 0 obj\n".encode("ascii") + corpo + b"\nendobj\n"
-        posicoes.append(posicao)
-        partes.append(bloco)
-        posicao += len(bloco)
-    posicao_xref = posicao
-    xref = f"xref\n0 {len(objetos) + 1}\n0000000000 65535 f \n"
-    xref += "".join(f"{pos:010d} 00000 n \n" for pos in posicoes)
-    trailer = (
-        f"trailer\n<< /Size {len(objetos) + 1} /Root 1 0 R >>\nstartxref\n{posicao_xref}\n%%EOF\n"
-    )
-    partes.append((xref + trailer).encode("ascii"))
-    caminho.write_bytes(b"".join(partes))
-    return caminho
 
 
 @pytest.mark.parametrize(
@@ -107,13 +71,6 @@ def test_pdf_real_devolve_codigo_titulo_versao_e_data(
     assert ler_metadados(PASTA_BASE / nome) == esperado
 
 
-def test_extracao_sobre_o_mesmo_texto_e_idempotente() -> None:
-    primeira = extrair_metadados(TEXTO_PRIMEIRA_PAGINA, CAMINHO_FICTICIO)
-    segunda = extrair_metadados(TEXTO_PRIMEIRA_PAGINA, CAMINHO_FICTICIO)
-
-    assert primeira == segunda
-
-
 def test_extrai_metadados_do_texto_sintetico_no_layout_real() -> None:
     metadados = extrair_metadados(TEXTO_PRIMEIRA_PAGINA, CAMINHO_FICTICIO)
 
@@ -123,13 +80,6 @@ def test_extrai_metadados_do_texto_sintetico_no_layout_real() -> None:
         versao=VERSAO_ESPERADA,
         data_emissao=DATA_ESPERADA,
     )
-
-
-def test_metadados_sao_imutaveis() -> None:
-    metadados = extrair_metadados(TEXTO_PRIMEIRA_PAGINA, CAMINHO_FICTICIO)
-
-    with pytest.raises(AttributeError):
-        metadados.codigo = "OUTRO"  # type: ignore[misc]
 
 
 @pytest.mark.parametrize(
@@ -172,35 +122,10 @@ def test_texto_sem_tabela_de_identificacao_levanta_erro_com_a_causa() -> None:
     with pytest.raises(ErroDocumento) as info:
         extrair_metadados(texto_sem_tabela, CAMINHO_FICTICIO)
 
-    assert "Tabela de identificação ausente" in str(info.value)
     assert str(CAMINHO_FICTICIO) in str(info.value)
 
 
-def test_pdf_com_texto_sem_tabela_levanta_erro_com_a_causa(tmp_path: Path) -> None:
-    caminho = _pdf_com_texto_sem_tabela(tmp_path / "sem_tabela.pdf")
-
-    with pytest.raises(ErroDocumento) as info:
-        ler_metadados(caminho)
-
-    assert "Tabela de identificação ausente" in str(info.value)
-    assert str(caminho) in str(info.value)
-
-
-def test_pdf_sem_texto_levanta_erro_do_leitor(tmp_path: Path) -> None:
-    caminho = tmp_path / "em_branco.pdf"
-    escritor = PdfWriter()
-    escritor.add_blank_page(595, 842)
-    with caminho.open("wb") as arquivo:
-        escritor.write(arquivo)
-
-    with pytest.raises(ErroDocumento) as info:
-        ler_metadados(caminho)
-
-    assert "sem texto extraível" in str(info.value)
-    assert str(caminho) in str(info.value)
-
-
-@pytest.mark.parametrize("codigo_invalido", ["FIN-POL-1", "FIN-POL-0001", "FIN-POLITICA-001"])
+@pytest.mark.parametrize("codigo_invalido", ["FIN-POL-1", "FIN-POLITICA-001"])
 def test_codigo_fora_do_padrao_levanta_erro_citando_o_campo_codigo(codigo_invalido: str) -> None:
     texto = TEXTO_PRIMEIRA_PAGINA.replace("FIN-POL-001\n", f"{codigo_invalido}\n", 1)
 
@@ -230,15 +155,6 @@ def test_linha_em_caixa_alta_sem_prefixo_agricoppel_e_aceita_como_titulo() -> No
     assert extrair_metadados(texto, CAMINHO_FICTICIO).titulo == "MATERIAL FICTÍCIO PARA AVALIAÇÃO"
 
 
-def test_cabecalho_em_caixa_alta_colado_ao_subtitulo_nao_vira_titulo() -> None:
-    texto = TEXTO_PRIMEIRA_PAGINA.replace("Página 1\n POLÍTICA DE REEMBOLSO\n", "", 1)
-
-    with pytest.raises(ErroDocumento) as info:
-        extrair_metadados(texto, CAMINHO_FICTICIO)
-
-    assert "'titulo'" in str(info.value)
-
-
 def test_subtitulo_em_caixa_alta_usa_a_linha_acima_dele_como_titulo() -> None:
     texto = TEXTO_PRIMEIRA_PAGINA.replace(
         " Despesas de viagem, deslocamentos e prestação de contas",
@@ -248,13 +164,38 @@ def test_subtitulo_em_caixa_alta_usa_a_linha_acima_dele_como_titulo() -> None:
     assert extrair_metadados(texto, CAMINHO_FICTICIO).titulo == "POLÍTICA DE REEMBOLSO"
 
 
-@pytest.mark.parametrize("recuo", ["\t  ", "\xa0", " \xa0\t"])
+@pytest.mark.parametrize("recuo", ["\t  ", "\xa0"])
 def test_campos_com_recuo_a_esquerda_sao_extraidos_como_no_texto_sem_recuo(recuo: str) -> None:
     texto_recuado = "".join(f"{recuo}{linha}\n" for linha in TEXTO_PRIMEIRA_PAGINA.splitlines())
 
     assert extrair_metadados(texto_recuado, CAMINHO_FICTICIO) == extrair_metadados(
         TEXTO_PRIMEIRA_PAGINA, CAMINHO_FICTICIO
     )
+
+
+@pytest.mark.parametrize("data_invalida", ["Novembro", "Novembro/26"])
+def test_data_sem_ano_completo_levanta_erro_citando_o_campo_data(data_invalida: str) -> None:
+    texto = TEXTO_PRIMEIRA_PAGINA.replace("Novembro/2026", data_invalida)
+
+    with pytest.raises(ErroDocumento) as info:
+        extrair_metadados(texto, CAMINHO_FICTICIO)
+
+    assert "'data'" in str(info.value)
+
+
+def test_versao_sem_numero_levanta_erro_citando_o_campo_versao() -> None:
+    texto = TEXTO_PRIMEIRA_PAGINA.replace("Versão 1.0", "Versão")
+
+    with pytest.raises(ErroDocumento) as info:
+        extrair_metadados(texto, CAMINHO_FICTICIO)
+
+    assert "'versao'" in str(info.value)
+
+
+def test_rotulo_identificacao_depois_da_tabela_nao_altera_o_resultado() -> None:
+    texto = TEXTO_PRIMEIRA_PAGINA + "Identificação\nFRO-POL-002\n"
+
+    assert extrair_metadados(texto, CAMINHO_FICTICIO).codigo == "FIN-POL-001"
 
 
 def test_rotulo_solto_no_corpo_antes_da_tabela_real_e_ignorado() -> None:

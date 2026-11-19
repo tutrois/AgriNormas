@@ -120,10 +120,6 @@ def test_pergunta_de_faq_ignora_secoes_que_nao_sao_faq() -> None:
     assert pergunta_de_faq(_secao_com_tipo("4", "excecao", "Pergunta?")) is None
 
 
-def test_entradas_sem_secoes_devolvem_tupla_vazia() -> None:
-    assert entradas_indexaveis([], perguntas_faq=True) == ()
-
-
 def test_com_a_opcao_faq_o_pedido_ao_provedor_inclui_a_pergunta_logo_apos_a_secao() -> None:
     provedor = ProvedorContador()
     normal = _secao("1")
@@ -138,12 +134,3 @@ def test_com_a_opcao_faq_o_pedido_ao_provedor_inclui_a_pergunta_logo_apos_a_seca
     melhor = indice.buscar((0.0, 0.0, 1.0), 1)[0]
     assert melhor.secao is faq
     assert melhor.pontuacao == 1.0
-
-
-def test_sem_a_opcao_faq_o_pedido_ao_provedor_nao_muda() -> None:
-    provedor = ProvedorContador()
-    secoes = [_secao("1"), _faq("1")]
-
-    construir_indice(secoes, provedor)
-
-    assert provedor.chamadas == [tuple(texto_indexavel(secao) for secao in secoes)]

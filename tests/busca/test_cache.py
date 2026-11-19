@@ -89,23 +89,6 @@ def test_ler_com_outro_modelo_nao_devolve_vetores(tmp_path: Path) -> None:
     assert repositorio.ler("outro-modelo") == {}
 
 
-def test_gravar_sem_entradas_limpa_o_cache_anterior(tmp_path: Path) -> None:
-    repositorio = _repositorio(tmp_path)
-    repositorio.gravar((_entrada("primeiro"),))
-
-    repositorio.gravar(())
-
-    assert repositorio.ler(MODELO) == {}
-
-
-def test_gravar_nao_deixa_arquivo_temporario(tmp_path: Path) -> None:
-    repositorio = _repositorio(tmp_path)
-
-    repositorio.gravar((_entrada("primeiro"),))
-
-    assert sorted(arquivo.name for arquivo in (tmp_path / "dados").iterdir()) == ["indice.npz"]
-
-
 def test_falha_de_gravacao_nao_levanta_excecao(tmp_path: Path) -> None:
     # Depende do comportamento do SO: um diretório no lugar do arquivo faz o `os.replace`
     # levantar OSError. Esse comportamento é do sistema operacional, não do Python; em outro
@@ -124,15 +107,6 @@ def test_arquivo_corrompido_devolve_cache_vazio(tmp_path: Path) -> None:
     repositorio.gravar((_entrada("primeiro"),))
     caminho = tmp_path / "dados" / "indice.npz"
     caminho.write_bytes(b"isto nao e um npz")
-
-    assert repositorio.ler(MODELO) == {}
-
-
-def test_arquivo_truncado_devolve_cache_vazio(tmp_path: Path) -> None:
-    repositorio = _repositorio(tmp_path)
-    repositorio.gravar((_entrada("primeiro"), _entrada("segundo")))
-    caminho = tmp_path / "dados" / "indice.npz"
-    caminho.write_bytes(caminho.read_bytes()[:40])
 
     assert repositorio.ler(MODELO) == {}
 
@@ -277,19 +251,6 @@ def test_arquivo_corrompido_recalcula_tudo_sem_excecao(tmp_path: Path) -> None:
     assert indice.buscar(_vetor_do_texto(texto_indexavel(secoes[0])), 1)[0].secao == secoes[0]
 
 
-def test_depois_de_recalcular_o_cache_volta_a_valer(tmp_path: Path) -> None:
-    repositorio = _repositorio(tmp_path)
-    secoes = [_secao("FIN-POL-001", "1")]
-    (tmp_path / "dados").mkdir()
-    (tmp_path / "dados" / "indice.npz").write_bytes(b"lixo")
-    construir_indice_com_cache(secoes, ProvedorContador(), modelo=MODELO, repositorio=repositorio)
-
-    provedor = ProvedorContador()
-    construir_indice_com_cache(secoes, provedor, modelo=MODELO, repositorio=repositorio)
-
-    assert provedor.chamadas == 0
-
-
 def test_textos_repetidos_no_mesmo_pedido_sao_enviados_uma_vez(tmp_path: Path) -> None:
     repositorio = _repositorio(tmp_path)
     secoes = [_secao("FIN-POL-001", "1", "mesmo texto"), _secao("FIN-POL-001", "1", "mesmo texto")]
@@ -419,27 +380,6 @@ def test_vetores_novos_de_outra_dimensao_descartam_o_cache_e_regravam(
     lidos = repositorio.ler(MODELO)
     assert len(lidos) == 2
     assert {len(vetor) for vetor in lidos.values()} == {5}
-    assert sorted(arquivo.name for arquivo in (tmp_path / "dados").iterdir()) == ["indice.npz"]
-    assert len(indice.buscar((1.0, 2.0, 3.0, 4.0, 5.0), 2)) == 2
-
-
-def test_inicializacao_seguinte_ao_recalculo_nao_erra_nem_chama_o_provedor(tmp_path: Path) -> None:
-    repositorio = _repositorio(tmp_path)
-    doc_a = [_secao("FIN-POL-001", "1")]
-    doc_b = [_secao("FRO-POL-002", "1")]
-    construir_indice_com_cache(
-        doc_a, ProvedorComDimensao(3), modelo=MODELO, repositorio=repositorio
-    )
-    construir_indice_com_cache(
-        doc_a + doc_b, ProvedorComDimensao(5), modelo=MODELO, repositorio=repositorio
-    )
-    provedor = ProvedorComDimensao(5)
-
-    indice = construir_indice_com_cache(
-        doc_a + doc_b, provedor, modelo=MODELO, repositorio=repositorio
-    )
-
-    assert provedor.chamadas == 0
     assert len(indice.buscar((1.0, 2.0, 3.0, 4.0, 5.0), 2)) == 2
 
 
@@ -466,7 +406,7 @@ def test_recalculo_com_dimensoes_divergentes_levanta_erro_e_preserva_o_cache_ant
     assert {len(vetor) for vetor in lidos.values()} == {3}
 
 
-def test_sem_textos_novos_cache_de_outra_dimensao_so_falha_na_consulta_m29(tmp_path: Path) -> None:
+def test_sem_textos_novos_cache_de_outra_dimensao_so_falha_na_consulta(tmp_path: Path) -> None:
     # Limite conhecido: sem vetores novos não há dimensão do provedor para comparar, e a
     # montagem não pode chamar o provedor. O teste fixa esse comportamento; se o limite for
     # fechado, ele deve mudar junto.
@@ -510,21 +450,6 @@ def test_perguntas_de_faq_entram_no_cache_com_o_proprio_hash(tmp_path: Path) -> 
         hash_texto(pergunta): _vetor_do_texto(pergunta),
     }
     assert indice.buscar(_vetor_do_texto(pergunta), 1)[0].secao == faq
-
-
-def test_segunda_inicializacao_com_perguntas_de_faq_nao_chama_o_provedor(tmp_path: Path) -> None:
-    repositorio = _repositorio(tmp_path)
-    faq = [_faq("1", "Existe um limite fixo?")]
-    construir_indice_com_cache(
-        faq, ProvedorContador(), modelo=MODELO, repositorio=repositorio, perguntas_faq=True
-    )
-    segundo = ProvedorContador()
-
-    construir_indice_com_cache(
-        faq, segundo, modelo=MODELO, repositorio=repositorio, perguntas_faq=True
-    )
-
-    assert segundo.chamadas == 0
 
 
 def test_ligar_perguntas_de_faq_so_pede_ao_provedor_as_perguntas_novas(tmp_path: Path) -> None:

@@ -1,6 +1,7 @@
 """Testes da configuração tipada e validada, sem ler `os.environ` nem o `.env` real."""
 
 import os
+import pprint
 from collections.abc import Mapping
 from pathlib import Path
 from unittest.mock import patch
@@ -359,3 +360,34 @@ def test_pasta_com_til_expande_para_a_pasta_do_usuario() -> None:
     configuracao = carregar_configuracao({**AMBIENTE_MINIMO, "PASTA_DOCUMENTOS": "~/x"})
 
     assert configuracao.pasta_documentos == Path.home() / "x"
+
+
+# Bordas da chave e do vazamento
+
+
+def test_valor_none_para_a_chave_e_tratado_como_ausente() -> None:
+    with pytest.raises(ConfiguracaoInvalida, match="OPENAI_API_KEY"):
+        carregar_configuracao({"OPENAI_API_KEY": None})  # type: ignore[dict-item]
+
+
+def test_chave_com_espacos_nas_bordas_e_normalizada() -> None:
+    configuracao = carregar_configuracao({"OPENAI_API_KEY": f"  {CHAVE_FALSA}  "})
+
+    assert configuracao.chave_openai == CHAVE_FALSA
+
+
+def test_limiar_infinito_fora_do_intervalo_lanca_erro() -> None:
+    with pytest.raises(ConfiguracaoInvalida, match="LIMIAR_SIMILARIDADE"):
+        carregar_configuracao({**AMBIENTE_MINIMO, "LIMIAR_SIMILARIDADE": "inf"})
+
+
+def test_pprint_nao_exibe_a_chave() -> None:
+    configuracao = carregar_configuracao(AMBIENTE_MINIMO)
+
+    assert CHAVE_FALSA not in pprint.pformat(configuracao)
+
+
+def test_f_string_nao_exibe_a_chave() -> None:
+    configuracao = carregar_configuracao(AMBIENTE_MINIMO)
+
+    assert CHAVE_FALSA not in f"{configuracao!r} {configuracao}"

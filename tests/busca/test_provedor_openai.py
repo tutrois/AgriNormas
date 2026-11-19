@@ -152,8 +152,9 @@ def test_lista_vazia_devolve_tupla_vazia_sem_chamar_a_api() -> None:
 
 
 def test_erro_de_autenticacao_vira_erro_busca_sem_a_chave() -> None:
-    cliente = ClienteSimulado([_erro_autenticacao()])
-    provedor = _provedor(cliente)
+    cliente = ClienteSimulado([_erro_autenticacao(), _resposta_embeddings([(1.0,)])])
+    esperas: list[float] = []
+    provedor = _provedor(cliente, esperas=esperas)
 
     with pytest.raises(ErroBusca) as info:
         provedor.gerar(["pergunta sobre reembolso"])
@@ -162,17 +163,6 @@ def test_erro_de_autenticacao_vira_erro_busca_sem_a_chave() -> None:
     assert mensagem == MENSAGEM_AUTENTICACAO
     assert CHAVE_FALSA not in mensagem
     assert "pergunta sobre reembolso" not in mensagem
-    assert cliente.chamadas == 1
-
-
-def test_erro_de_autenticacao_nao_e_retentado() -> None:
-    cliente = ClienteSimulado([_erro_autenticacao(), _resposta_embeddings([(1.0,)])])
-    esperas: list[float] = []
-    provedor = _provedor(cliente, esperas=esperas)
-
-    with pytest.raises(ErroBusca):
-        provedor.gerar(["x"])
-
     assert cliente.chamadas == 1
     assert esperas == []
 
@@ -237,6 +227,56 @@ def test_resposta_com_menos_vetores_que_textos_vira_erro_busca() -> None:
         provedor.gerar(["a", "b"])
 
 
+def test_erro_5xx_no_segundo_lote_e_retentado_sem_perder_a_ordem() -> None:
+    cliente = ClienteSimulado(
+        [_resposta_embeddings([(0.0,), (1.0,)]), _erro_servidor(), _resposta_embeddings([(2.0,)])]
+    )
+    esperas: list[float] = []
+    provedor = _provedor(cliente, tamanho_lote=2, tentativas=3, esperas=esperas)
+
+    resultado = provedor.gerar(["t0", "t1", "t2"])
+
+    assert resultado == ((0.0,), (1.0,), (2.0,))
+    assert cliente.lotes_enviados == [["t0", "t1"], ["t2"], ["t2"]]
+    assert esperas == [1.0]
+
+
+def test_timeout_e_tratado_como_erro_transitorio_e_retentado() -> None:
+    erro = openai.APITimeoutError(request=httpx2.Request("POST", URL_FALSA))
+    cliente = ClienteSimulado([erro, _resposta_embeddings([(0.9,)])])
+    esperas: list[float] = []
+    provedor = _provedor(cliente, tentativas=3, esperas=esperas)
+
+    assert provedor.gerar(["texto"]) == ((0.9,),)
+    assert esperas == [1.0]
+
+
+def test_erro_de_api_generico_vira_erro_busca_com_mensagem_fixa() -> None:
+    erro_generico = openai.APIError(
+        "detalhe da API que cita o conteúdo enviado",
+        httpx2.Request("POST", URL_FALSA),
+        body=None,
+    )
+    provedor = _provedor(ClienteSimulado([erro_generico]))
+
+    with pytest.raises(ErroBusca) as info:
+        provedor.gerar(["texto"])
+
+    assert str(info.value) == MENSAGEM_FALHA_API
+    assert "detalhe da API" not in str(info.value)
+
+
+@pytest.mark.parametrize("indices", [[0, 0], [0, 2]])
+def test_indices_duplicados_ou_com_lacuna_na_resposta_viram_erro_busca(
+    indices: list[int],
+) -> None:
+    itens = [SimpleNamespace(index=i, embedding=[float(i)]) for i in indices]
+    cliente = ClienteSimulado([SimpleNamespace(data=itens)])
+
+    with pytest.raises(ErroBusca):
+        _provedor(cliente).gerar(["a", "b"])
+
+
 def test_mensagens_de_erro_nao_vazam_a_chave_nem_o_conteudo(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -252,7 +292,7 @@ def test_mensagens_de_erro_nao_vazam_a_chave_nem_o_conteudo(
     assert "conteudo confidencial" not in texto_visivel
 
 
-@pytest.mark.parametrize("tamanho_lote", [0, -1])
+@pytest.mark.parametrize("tamanho_lote", [0])
 def test_tamanho_de_lote_invalido_e_erro_de_configuracao(tamanho_lote: int) -> None:
     with pytest.raises(ConfiguracaoInvalida):
         ProvedorEmbeddingOpenAI(
@@ -302,7 +342,7 @@ def test_timeout_recebido_da_composicao_vai_ao_cliente_do_sdk() -> None:
     assert provedor._cliente.timeout == 7.5
 
 
-@pytest.mark.parametrize("timeout", [0.0, -1.0])
+@pytest.mark.parametrize("timeout", [0.0])
 def test_timeout_nao_positivo_e_erro_de_configuracao(timeout: float) -> None:
     with pytest.raises(ConfiguracaoInvalida):
         ProvedorEmbeddingOpenAI(

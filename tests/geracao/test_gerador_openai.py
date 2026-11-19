@@ -223,6 +223,19 @@ def test_resposta_sem_escolhas_vira_erro_de_geracao() -> None:
     assert str(info.value) == "A API de geração devolveu uma resposta sem conteúdo."
 
 
+def test_conteudo_nulo_do_modelo_devolve_sem_evidencia() -> None:
+    cliente = ClienteSimulado([_resposta_chat(None)])
+
+    assert _gerador(cliente).gerar(PERGUNTA, [_trecho()]) == Resposta.sem_evidencia()
+
+
+def test_choices_nulo_vira_erro_de_geracao() -> None:
+    cliente = ClienteSimulado([SimpleNamespace(choices=None)])
+
+    with pytest.raises(ErroGeracao):
+        _gerador(cliente).gerar(PERGUNTA, [_trecho()])
+
+
 def test_erro_de_conexao_vira_erro_de_geracao() -> None:
     cliente = ClienteSimulado([_erro_conexao()])
 
