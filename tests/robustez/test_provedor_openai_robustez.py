@@ -1,9 +1,4 @@
-"""Casos de borda do provedor de embeddings da OpenAI (HIST-009), escritos pelo Tester.
-
-Usam cliente simulado: nenhuma chamada real à API. Os testes usam a interface pública
-`ProvedorEmbeddingOpenAI.gerar` e as exceções do SDK `openai`.
-
-"""
+"""Casos de borda de `ProvedorEmbeddingOpenAI.gerar`, com cliente simulado e sem chamada à API."""
 
 from __future__ import annotations
 
@@ -102,9 +97,6 @@ def _provedor(
     )
 
 
-# --- Lote com um texto só e lotes com falha no meio ----------------------------------
-
-
 def test_lote_com_um_so_texto_devolve_um_vetor() -> None:
     cliente = ClienteSimulado([_resposta([(0.3, 0.7)])])
 
@@ -151,9 +143,6 @@ def test_autenticacao_recusada_no_segundo_lote_descarta_o_primeiro_e_nao_retenta
     assert esperas == []
 
 
-# --- Timeout ------------------------------------------------------------------------
-
-
 def test_timeout_e_tratado_como_erro_transitorio_e_retentado() -> None:
     cliente = ClienteSimulado([_erro_timeout(), _resposta([(0.9,)])])
     esperas: list[float] = []
@@ -174,9 +163,6 @@ def test_timeout_repetido_esgota_as_tentativas_com_mensagem_transitoria() -> Non
         provedor.gerar(["texto"])
 
     assert str(info.value) == MENSAGEM_TRANSITORIA_ESGOTADA
-
-
-# --- Mensagens e encadeamento de exceções -------------------------------------------
 
 
 def test_erro_de_autenticacao_nao_carrega_a_excecao_original_como_causa() -> None:
@@ -219,9 +205,6 @@ def test_erro_de_autenticacao_nao_expoe_conteudo_nem_chave_no_log(
     visivel = str(info.value) + caplog.text
     assert CHAVE_FALSA not in visivel
     assert CONTEUDO_SIGILOSO not in visivel
-
-
-# --- Índices inconsistentes na resposta (bugs) --------------------------------------
 
 
 def test_indice_duplicado_na_resposta_vira_erro_busca() -> None:

@@ -1,7 +1,4 @@
-"""Testes da calibração do limiar: leitura da tabela de perguntas e cálculo das pontuações.
-
-Offline. A tabela vem de um arquivo temporário com o mesmo formato de `perguntas.md`.
-"""
+"""Testes da calibração do limiar, com uma tabela temporária no formato de `perguntas.md`."""
 
 from __future__ import annotations
 

@@ -1,22 +1,14 @@
-"""Calibração do limiar de similaridade com as perguntas de validação (HIST-011, TSK-011.2).
+"""Calibra o piso de similaridade com as perguntas de `tests/validacao/perguntas.md` (ADR-011).
 
-Lê os PDFs de `base_conhecimento/` pelo fluxo da produção (leitura, metadados, limpeza e
-chunking), gera os embeddings com o provedor real e pontua as perguntas de
-`tests/validacao/perguntas.md`. A saída vai para o terminal. Não grava cache nem arquivos.
+Indexa a base pelo fluxo de produção com o provedor real e imprime, por pergunta, as
+pontuações, a posição do melhor trecho esperado e se ele chega à geração. Faz chamadas à API
+(uma para as seções, outra para as perguntas) e não grava arquivos.
 
-Desde o ADR-011, `LIMIAR_SIMILARIDADE` é só um piso contra perguntas sem relação com a base, e a
-decisão de evidência fica com a geração. Por isso a tabela mostra, além das pontuações, a
-posição do melhor trecho esperado e se ele chega à geração (entre as `TOP_K` primeiras e acima
-do piso).
-
-Chamadas à API: uma para os chunks (em um lote) e uma para as perguntas. Use com moderação.
-
-Uso, a partir da raiz do projeto, com OPENAI_API_KEY no `.env`:
+Uso, na raiz do projeto, com OPENAI_API_KEY no `.env`:
 
     .venv\\Scripts\\python.exe scripts\\calibrar_limiar.py
 
-Importar este módulo não tem efeitos colaterais: `src/` só entra em `sys.path` quando o
-script é executado diretamente.
+`src/` só entra em `sys.path` na execução direta, então importar o módulo não tem efeitos.
 """
 
 from __future__ import annotations
@@ -35,11 +27,11 @@ CAMINHO_PERGUNTAS: Final[Path] = RAIZ_PROJETO / "tests" / "validacao" / "pergunt
 
 TAMANHO_LOTE_EMBEDDINGS: Final[int] = 100
 PERGUNTAS_FAQ: Final[bool] = True
-"""Mesma configuração de `src/composicao.py`: cada par de FAQ ganha uma entrada com a pergunta.
+"""Mesma configuração de `src/composicao.py`. Índice e contagem usam este valor, para que
+`total_secoes` bata com o número de vetores.
 
-Índice e contagem usam este valor, para que `total_secoes` bata com o número de vetores.
-A linha de base de ADR-002 (55 entradas, uma por seção, sem perguntas de FAQ) foi medida com
-`False`. Para reproduzi-la, troque para `False` aqui e em `tests/integracao/test_calibracao.py`.
+A linha de base do ADR-002 foi medida com `False`; para reproduzi-la, troque aqui e em
+`tests/integracao/test_calibracao.py`.
 """
 CODIGO_SAIDA_OK: Final[int] = 0
 CODIGO_SAIDA_FALHA: Final[int] = 1
@@ -47,7 +39,7 @@ SEPARADOR: Final[str] = "=" * 78
 
 
 def _preparar_caminho() -> None:
-    """Coloca `src/` no caminho de importação. Chamada só pela execução direta do script."""
+    """Coloca `src/` no caminho de importação (só na execução direta)."""
     caminho = str(PASTA_SRC)
     if caminho not in sys.path:
         sys.path.insert(0, caminho)
@@ -58,7 +50,7 @@ def _escrever(texto: str) -> None:
 
 
 def _secoes_do_corpus(pasta: Path, tamanho_maximo: int) -> tuple[Secao, ...]:
-    """Lê cada PDF e divide em seções, pelo mesmo fluxo de `scripts/relatorio_corpus.py`."""
+    """Lê cada PDF da pasta e divide em seções, com o chunker de produção."""
     from documentos.chunker_secao import ChunkerPorSecao
     from documentos.leitor_pdf import LeitorPdf
     from documentos.limpeza import limpar_paginas

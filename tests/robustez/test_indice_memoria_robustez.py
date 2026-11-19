@@ -1,7 +1,4 @@
-"""Casos de borda e de erro do índice em memória (HIST-010), escritos pelo Tester.
-
-Os testes usam a interface pública `IndiceEmMemoria.adicionar` e `IndiceEmMemoria.buscar`.
-"""
+"""Casos de borda e de erro de `IndiceEmMemoria.adicionar` e `IndiceEmMemoria.buscar`."""
 
 from __future__ import annotations
 

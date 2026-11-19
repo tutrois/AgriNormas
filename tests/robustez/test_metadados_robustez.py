@@ -1,7 +1,7 @@
-"""Casos de borda e erros dos metadados (HIST-006), de ponta a ponta com o leitor de PDF.
+"""Casos de borda e erros dos metadados, de ponta a ponta com o leitor de PDF.
 
-Usa o texto da primeira página no layout real da tabela de identificação, com uma
-variação por teste.
+Usa o texto da primeira página no layout real da tabela de identificação, com uma variação
+por teste.
 """
 
 from __future__ import annotations

@@ -1,8 +1,7 @@
-"""Robustez da configuração (HIST-002): casos de borda e erros de entrada.
+"""Robustez da configuração: casos de borda e erros de entrada.
 
-Diferente de `tests/nucleo/test_config.py`, estes testes exercitam o caminho padrão
-de `carregar_configuracao` (sem `ambiente` injetado), que lê `os.environ` e o `.env`.
-Cada teste isola o ambiente com `monkeypatch` e `tmp_path`, sem tocar o `.env` real.
+Exercita o caminho padrão de `carregar_configuracao` (sem `ambiente` injetado), que lê
+`os.environ` e o `.env`. Cada teste isola o ambiente com `monkeypatch` e `tmp_path`.
 """
 
 import pprint
@@ -42,9 +41,6 @@ def _escrever_env(diretorio: Path, conteudo: str) -> Path:
     return caminho
 
 
-# --- Chave da API: caminho padrão (os.environ e .env) ---
-
-
 def test_sem_chave_no_processo_nem_no_env_lanca_erro_citando_a_variavel(
     processo_sem_configuracao: None, tmp_path: Path
 ) -> None:
@@ -74,7 +70,6 @@ def test_variavel_do_processo_prevalece_sobre_o_env(
 
 
 def test_valor_none_para_a_chave_e_tratado_como_ausente() -> None:
-    # Ex.: {"OPENAI_API_KEY": os.getenv("OPENAI_API_KEY")} quando a variável não existe.
     with pytest.raises(ConfiguracaoInvalida, match="OPENAI_API_KEY"):
         carregar_configuracao({"OPENAI_API_KEY": None})  # type: ignore[dict-item]
 
@@ -85,9 +80,6 @@ def test_chave_com_espacos_nas_bordas_e_normalizada() -> None:
     assert configuracao.chave_openai == CHAVE_FALSA
 
 
-# --- Valores vindos do .env ---
-
-
 def test_valor_invalido_no_env_cita_a_variavel(
     processo_sem_configuracao: None, tmp_path: Path
 ) -> None:
@@ -95,9 +87,6 @@ def test_valor_invalido_no_env_cita_a_variavel(
 
     with pytest.raises(ConfiguracaoInvalida, match="TOP_K"):
         carregar_configuracao(caminho_env=caminho)
-
-
-# --- Limiar de similaridade: bordas do intervalo [0, 1] ---
 
 
 @pytest.mark.parametrize("limiar", ["inf", "-inf", "1e400"])
@@ -110,9 +99,6 @@ def test_limiar_com_espacos_nas_bordas_e_aceito() -> None:
     configuracao = carregar_configuracao({**AMBIENTE_MINIMO, "LIMIAR_SIMILARIDADE": " 0.5 "})
 
     assert configuracao.limiar_similaridade == 0.5
-
-
-# --- Valores numéricos: negativos, não finitos e formatos inválidos ---
 
 
 @pytest.mark.parametrize(
@@ -149,9 +135,6 @@ def test_mensagem_de_erro_nao_repete_o_valor_digitado(variavel: str, valor: str)
         carregar_configuracao({**AMBIENTE_MINIMO, variavel: valor})
 
     assert "424242" not in str(excinfo.value)
-
-
-# --- Representação: a chave não vaza por outras formas de exibição ---
 
 
 def test_pprint_nao_exibe_a_chave() -> None:

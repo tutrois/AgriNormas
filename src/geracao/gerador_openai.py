@@ -1,9 +1,6 @@
-"""Cliente do modelo de linguagem da OpenAI (HIST-013 e HIST-015).
+"""Cliente da OpenAI que implementa `GeradorResposta`.
 
-Implementa o contrato `GeradorResposta`, com temperatura 0 e saída em JSON (modo JSON do
-SDK). A saída passa por `validar_saida`, que confere as citações contra os trechos
-recebidos. Erros do SDK viram `ErroGeracao`, com mensagem fixa, sem a chave, o prompt
-ou a resposta bruta.
+Erros do SDK viram `ErroGeracao` com mensagem fixa, sem a chave, o prompt ou a resposta bruta.
 """
 
 from __future__ import annotations
@@ -46,11 +43,7 @@ class GeradorOpenAI:
         modelo: str = MODELO_PADRAO,
         cliente: openai.OpenAI | None = None,
     ) -> None:
-        """`cliente` existe para testes. Em produção, o cliente é criado com `chave`.
-
-        `timeout_segundos` vem da composição. `max_retries=0` desliga a retentativa interna
-        do SDK, para que a falha chegue ao chamador como `ErroGeracao`.
-        """
+        """`cliente` existe para testes. `max_retries=0` faz a falha chegar como `ErroGeracao`."""
         _validar_configuracao(chave, modelo, timeout_segundos)
         self._modelo = modelo
         self._cliente = (
@@ -68,10 +61,9 @@ class GeradorOpenAI:
         return _interpretar(resposta, trechos)
 
     def _chamar_modelo(self, mensagens: list[ChatCompletionMessageParam]) -> ChatCompletion:
-        """Chama a API e converte falhas do SDK em `ErroGeracao`.
+        """Converte falhas do SDK em `ErroGeracao`, levantado fora do `except`.
 
-        O `ErroGeracao` é levantado depois do `try`, para que `__context__` não guarde a
-        exceção do SDK (que carrega a requisição com o cabeçalho `Authorization`).
+        Assim `__context__` não guarda a exceção do SDK, que carrega o cabeçalho `Authorization`.
         """
         falha: str
         try:
@@ -96,7 +88,6 @@ class GeradorOpenAI:
 
 
 def _montar_mensagens(pergunta: str, trechos: Sequence[Trecho]) -> list[ChatCompletionMessageParam]:
-    """Monta a conversa: prompt de fundamentação versionado e o contexto com trechos e pergunta."""
     return [
         {"role": "system", "content": PROMPT_SISTEMA},
         {"role": "user", "content": montar_conteudo_usuario(pergunta, trechos)},
@@ -104,7 +95,6 @@ def _montar_mensagens(pergunta: str, trechos: Sequence[Trecho]) -> list[ChatComp
 
 
 def _interpretar(resposta: ChatCompletion, trechos: Sequence[Trecho]) -> Resposta:
-    """Lê o JSON da primeira escolha e o valida contra os trechos. Sem escolhas, é inconsistente."""
     if not resposta.choices:
         raise ErroGeracao(MENSAGEM_RESPOSTA_INCONSISTENTE) from None
     texto = (resposta.choices[0].message.content or "").strip()

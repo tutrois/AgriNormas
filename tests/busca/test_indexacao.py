@@ -1,7 +1,4 @@
-"""Testes da montagem do índice a partir dos chunks (apoio à HIST-011).
-
-Offline: o provedor é falso e conta as chamadas.
-"""
+"""Testes da montagem do índice, com provedor falso que conta as chamadas."""
 
 from __future__ import annotations
 

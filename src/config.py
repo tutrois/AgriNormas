@@ -1,4 +1,4 @@
-"""Configuração tipada e validada do AgriNormas (HIST-002).
+"""Configuração tipada e validada do AgriNormas.
 
 Lê as variáveis de ambiente, completadas pelo arquivo `.env` quando ele existe.
 Não importa nenhuma biblioteca de IA e não tem efeito colateral no import.

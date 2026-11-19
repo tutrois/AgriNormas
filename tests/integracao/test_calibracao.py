@@ -1,16 +1,9 @@
-"""Testes de integração do buscador com a API real da OpenAI (HIST-011).
+"""Integração do buscador com a API real: só roda com `pytest -m integracao` e consome créditos.
 
-Rodam só com `pytest -m integracao`, com OPENAI_API_KEY no `.env`. Consomem créditos:
-os chunks são embedados uma vez por módulo, as sete perguntas em um pedido, e as perguntas
-1 e 4 uma vez cada pelo `BuscadorSemantico`.
-
-Desde o ADR-011, `LIMIAR_SIMILARIDADE` é só um piso (0,40) que descarta perguntas sem relação
-com a base, e a decisão de evidência fica com a geração. O critério de recuperação deixou de ser
-"melhor trecho esperado acima de 0,60" e passou a ser "melhor trecho esperado entre as `TOP_K`
-primeiras e acima do piso", que é o que faz a seção chegar ao modelo.
-
-As perguntas 6 e 7 só listam `§faq-5`, que `ReferenciaSecao` não lê (seção numérica). Para elas,
-o teste só confere que a pontuação foi registrada.
+Desde o ADR-011, `LIMIAR_SIMILARIDADE` é só um piso (0,40). O critério de recuperação é o melhor
+trecho esperado entre as `TOP_K` primeiras e acima do piso, que é o que leva a seção ao modelo.
+As perguntas 6 e 7 só listam `§faq-5`, que `ReferenciaSecao` não lê; para elas só se confere que
+a pontuação foi registrada.
 """
 
 from __future__ import annotations
@@ -44,14 +37,11 @@ RAIZ_PROJETO = Path(__file__).resolve().parents[2]
 CAMINHO_PERGUNTAS = RAIZ_PROJETO / "tests" / "validacao" / "perguntas.md"
 TAMANHO_LOTE = 100
 TOTAL_PERGUNTAS = 7
-# Piso e top-k do ADR-011 (docs/decisoes/ADR-011-limiar-como-piso-e-evidencia-pela-geracao.md).
-# O valor 0,60 do ADR-002 deixou de ser o controle de recusa. Constantes de propósito: o teste de
-# calibração não depende do valor de `.env`.
+# Piso e top-k do ADR-011, fixos para o teste não depender do `.env`.
 PISO_ADR_011 = 0.40
 TOP_K_ADR_011 = 8
-# Mesma configuração de `src/composicao.py` (perguntas de FAQ como entrada própria). A linha de
-# base de ADR-002 (55 entradas, sem FAQ) foi medida com False; para reproduzi-la, troque aqui e
-# em `scripts/calibrar_limiar.py`.
+# Mesma configuração de `src/composicao.py` (FAQ como entrada própria). A linha de base do ADR-002
+# foi medida com False; para reproduzi-la, troque aqui e em `scripts/calibrar_limiar.py`.
 PERGUNTAS_FAQ = True
 
 
@@ -64,7 +54,7 @@ class _Ambiente:
 
 
 def _secoes_do_corpus(pasta: Path, tamanho_maximo: int) -> tuple[Secao, ...]:
-    """Mesmo fluxo de `scripts/calibrar_limiar.py`: leitura, metadados, limpeza e chunking."""
+    """Mesmo fluxo de `scripts/calibrar_limiar.py`."""
     secoes: list[Secao] = []
     for caminho in sorted(pasta.glob("*.pdf")):
         paginas = LeitorPdf().ler(caminho)
@@ -147,7 +137,6 @@ def test_calibracao_registra_pontuacao_das_sete_perguntas(ambiente: _Ambiente) -
 
 
 def test_perguntas_so_com_faq_tem_pontuacao_registrada(ambiente: _Ambiente) -> None:
-    """Perguntas 6 e 7: a fonte é `§faq-5`, sem seção numérica. Só registra a pontuação."""
     so_faq = [p for p in ambiente.pontuacoes if not p.pergunta.fontes_esperadas]
 
     assert [p.pergunta.numero for p in so_faq] == [6, 7]
@@ -159,18 +148,14 @@ def test_perguntas_so_com_faq_tem_pontuacao_registrada(ambiente: _Ambiente) -> N
 def test_perguntas_com_secao_numerica_tem_trecho_esperado_acima_do_piso(
     ambiente: _Ambiente,
 ) -> None:
-    """Perguntas 1 a 5: o melhor trecho esperado passa do piso do ADR-011."""
     for resultado in _com_secao_numerica(ambiente):
         assert resultado.melhor_esperado is not None, resultado.pergunta.numero
         assert resultado.melhor_esperado.pontuacao >= PISO_ADR_011, resultado.pergunta.numero
 
 
 def test_perguntas_com_secao_numerica_tem_trecho_esperado_no_top_k(ambiente: _Ambiente) -> None:
-    """Perguntas 1 a 5: o melhor trecho esperado fica entre as `TOP_K` primeiras entradas.
-
-    Confere só o melhor trecho esperado de cada pergunta. Seções esperadas adicionais que ficam
-    fora do top-k (ex.: FIN-POL-001 §4 na pergunta 3) são cobradas em `tests/validacao/`.
-    """
+    """Seções esperadas adicionais fora do top-k (ex.: FIN-POL-001 §4 na pergunta 3) são cobradas
+    em `tests/validacao/`."""
     for resultado in _com_secao_numerica(ambiente):
         posicao = resultado.posicao_melhor_esperado
         assert posicao is not None, resultado.pergunta.numero

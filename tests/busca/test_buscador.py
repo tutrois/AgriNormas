@@ -1,8 +1,4 @@
-"""Testes do buscador com limiar de similaridade (HIST-011, TSK-011.1).
-
-Offline: o provedor é falso e devolve vetores controlados. O índice é o real
-(`IndiceEmMemoria`), para que a pontuação por cosseno seja a de verdade.
-"""
+"""Testes do buscador, com provedor falso e `IndiceEmMemoria` real (cosseno verdadeiro)."""
 
 from __future__ import annotations
 
@@ -21,7 +17,7 @@ PERGUNTA = "pergunta de teste"
 
 
 class ProvedorFalso:
-    """Devolve vetores controlados por texto e conta as chamadas feitas."""
+    """Vetores controlados por texto, com contagem de chamadas."""
 
     def __init__(self, vetores: dict[str, Vetor]) -> None:
         self._vetores = vetores
@@ -38,7 +34,7 @@ class ProvedorComErro:
 
 
 class ProvedorComQuantidadeErrada:
-    """Devolve uma quantidade de vetores diferente de um, como um provedor defeituoso."""
+    """Provedor defeituoso: devolve quantidade de vetores diferente de um."""
 
     def __init__(self, vetores: tuple[Vetor, ...]) -> None:
         self._vetores = vetores

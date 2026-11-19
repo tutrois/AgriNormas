@@ -1,9 +1,7 @@
-"""Robustez de ponta a ponta da leitura de PDFs (HIST-004).
+"""Robustez da leitura de PDFs: cada erro termina em `ErroDocumento` com o caminho citado.
 
-Cada caso de erro termina em `ErroDocumento` com o caminho citado, nunca em exceção
-não tratada. Os casos de permissão e de exceção inesperada da biblioteca usam
-`monkeypatch` porque o sistema operacional e o pypdf não permitem reproduzi-los
-de forma portátil com arquivos reais.
+Os casos de permissão e de exceção inesperada do pypdf usam `monkeypatch`, porque não dá para
+reproduzi-los de forma portátil com arquivos reais.
 """
 
 from __future__ import annotations

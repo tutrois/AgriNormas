@@ -1,9 +1,4 @@
-"""Testes da composição (HIST-018) com dublês: sem API real e sem gravar em `dados/`.
-
-O cache de vetores é apontado para `tmp_path`, os PDFs são substituídos por seções fixas e o
-provedor de embeddings e o gerador são dublês. O índice, o buscador e o `AssistenteRAG` são
-os de verdade, então o teste percorre o caminho que a aplicação usa.
-"""
+"""Testes da composição com dublês: sem API real e sem gravar em `dados/` (cache em `tmp_path`)."""
 
 from __future__ import annotations
 
@@ -121,7 +116,7 @@ def test_cache_valido_nao_chama_o_provedor_de_novo_na_montagem(
     assert set(resposta.fontes) == {Fonte.de_secao(secao) for secao in SECOES}
 
 
-# Cache de outra dimensão na consulta (M-29, cenário 2)
+# Cache de outra dimensão na consulta (cenário 2)
 
 
 def test_cache_de_outra_dimensao_na_consulta_reconstroi_o_indice_e_responde(
@@ -142,7 +137,7 @@ def test_cache_de_outra_dimensao_na_consulta_reconstroi_o_indice_e_responde(
     assert {len(vetor) for vetor in lidos.values()} == {5}
 
 
-# Perguntas de FAQ (HIST com perguntas_faq ligado na composição)
+# Perguntas de FAQ (`perguntas_faq` ligado na composição)
 
 
 def test_faq_gera_uma_entrada_extra_com_a_pergunta_no_pedido_inicial(

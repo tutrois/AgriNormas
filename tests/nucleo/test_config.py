@@ -1,7 +1,4 @@
-"""Testes da configuração tipada e validada (HIST-002).
-
-Usam o parâmetro `ambiente`: não leem `os.environ` nem o `.env` real.
-"""
+"""Testes da configuração tipada e validada, sem ler `os.environ` nem o `.env` real."""
 
 import os
 from collections.abc import Mapping
@@ -105,7 +102,7 @@ def test_padroes_do_codigo_coincidem_com_env_example() -> None:
     assert configuracao_exemplo == carregar_configuracao(AMBIENTE_MINIMO)
 
 
-# --- Caminho padrão: arquivo .env e os.environ (ambiente=None) ---
+# Caminho padrão: arquivo .env e os.environ (ambiente=None)
 
 
 def test_le_o_env_quando_ambiente_nao_e_informado(tmp_path: Path) -> None:
@@ -254,7 +251,7 @@ def test_mensagem_de_erro_nao_expoe_a_chave_nem_o_valor_digitado() -> None:
     assert excinfo.value.__suppress_context__ is True
 
 
-# --- Regra (d): valor vazio ou só com espaços usa o padrão; chave vazia é ausente ---
+# Regra (d): valor vazio ou só com espaços usa o padrão; chave vazia é ausente
 
 CAMPOS_COM_PADRAO = (
     "MODELO_GERACAO",
@@ -285,7 +282,7 @@ def test_chave_vazia_ou_so_com_espacos_continua_sendo_tratada_como_ausente(
         carregar_configuracao(ambiente)
 
 
-# --- Regra (e): com `ambiente` informado, .env e os.environ são ignorados ---
+# Regra (e): com `ambiente` informado, .env e os.environ são ignorados
 
 
 def test_ambiente_informado_ignora_env_e_os_environ(tmp_path: Path) -> None:
@@ -329,7 +326,7 @@ def test_ambiente_informado_sem_chave_nao_usa_a_chave_do_processo() -> None:
         carregar_configuracao({})
 
 
-# --- M-11: tetos de segurança para TOP_K e TAMANHO_MAXIMO_CHUNK ---
+# Tetos de segurança para TOP_K e TAMANHO_MAXIMO_CHUNK
 
 
 @pytest.mark.parametrize("top_k", ["1", "50"], ids=["minimo", "maximo"])
@@ -355,7 +352,7 @@ def test_tamanho_chunk_no_teto_superior_e_aceito() -> None:
     assert configuracao.tamanho_maximo_chunk == 10000
 
 
-# --- M-12: expansão de `~` em PASTA_DOCUMENTOS ---
+# Expansão de `~` em PASTA_DOCUMENTOS
 
 
 def test_pasta_com_til_expande_para_a_pasta_do_usuario() -> None:

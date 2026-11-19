@@ -1,8 +1,4 @@
-"""Prompt versionado de fundamentação e montagem do contexto (HIST-014, HIST-015).
-
-Função pura: não sabe de rede nem do SDK da OpenAI. Qualquer mudança no texto de
-`PROMPT_SISTEMA` exige aumentar `PROMPT_VERSAO`.
-"""
+"""Prompt de fundamentação e montagem do contexto. Mudou o prompt, aumente `PROMPT_VERSAO`."""
 
 from __future__ import annotations
 
@@ -127,10 +123,9 @@ def identificador_trecho(trecho: Trecho) -> str:
 
 
 def montar_conteudo_usuario(pergunta: str, trechos: Sequence[Trecho]) -> str:
-    """Monta a mensagem do usuário: cada trecho com seu identificador, e a pergunta por último.
+    """Trechos e pergunta vão em tags, para o modelo tratá-los como dado.
 
-    Trechos e pergunta ficam dentro de tags, para que o modelo trate o conteúdo como dado.
-    Os caracteres `<` e `>` são neutralizados, para que um texto não feche a tag por conta própria.
+    `<` e `>` são neutralizados, para que um texto não feche a tag por conta própria.
     """
     blocos = [_bloco_trecho(trecho) for trecho in trechos]
     blocos.append(f"<{TAG_PERGUNTA}>\n{_neutralizar(pergunta)}\n</{TAG_PERGUNTA}>")

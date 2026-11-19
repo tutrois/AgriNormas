@@ -1,10 +1,7 @@
-"""Casos de borda do chunking por seção (HIST-007), escritos pelo Tester.
+"""Casos de borda do chunking por seção pela interface pública `ChunkerPorSecao.dividir`.
 
-Os testes usam a interface pública `ChunkerPorSecao.dividir`. O caso da página que
-atravessa páginas usa `limpar_paginas` como entrada, de ponta a ponta.
-
-Os testes de limitação conhecida fixam o comportamento atual e citam a limitação no nome e
-na docstring. Quando a regra mudar, o teste falha e deve ser atualizado de propósito.
+Os testes de limitação conhecida fixam o comportamento atual e citam a limitação no nome e na
+docstring. Quando a regra mudar, o teste falha e deve ser atualizado de propósito.
 """
 
 from __future__ import annotations
@@ -32,9 +29,6 @@ def _dividir(texto: str, tamanho_maximo: int = TAMANHO_MAXIMO_CHUNK) -> tuple[Se
     return ChunkerPorSecao(tamanho_maximo=tamanho_maximo).dividir(CODIGO, _linhas(texto))
 
 
-# --- FAQ --------------------------------------------------------------------------------
-
-
 def test_pergunta_sem_resposta_nao_absorve_a_resposta_da_pergunta_seguinte() -> None:
     texto = f"{CABECALHO_FAQ}\nPergunta um?\nPergunta dois?\nResposta dois."
     secoes = _dividir(texto)
@@ -45,7 +39,7 @@ def test_pergunta_sem_resposta_nao_absorve_a_resposta_da_pergunta_seguinte() -> 
 
 
 def test_limitacao_resposta_que_termina_em_interrogacao_vira_nova_pergunta() -> None:
-    """LIMITAÇÃO CONHECIDA (aceita, TSK-007.4): a regra de FAQ trata todo parágrafo que
+    """LIMITAÇÃO CONHECIDA (aceita): a regra de FAQ trata todo parágrafo que
     termina em '?' como pergunta. Uma resposta que termina em '?' vira outro par, e o par
     anterior fica sem resposta. Não há ocorrência disso no corpus atual. Este teste fixa o
     comportamento atual; se a regra mudar, ele deve ser atualizado de propósito.
@@ -56,9 +50,6 @@ def test_limitacao_resposta_que_termina_em_interrogacao_vira_nova_pergunta() -> 
         ("faq-1", "faq", f"{CABECALHO_FAQ}\nPergunta um?"),
         ("faq-2", "faq", f"{CABECALHO_FAQ}\nResposta que termina em pergunta?"),
     ]
-
-
-# --- Página e herança de título ---------------------------------------------------------
 
 
 def test_secao_depois_de_paragrafo_que_atravessa_paginas_usa_a_pagina_do_cabecalho() -> None:
@@ -94,9 +85,6 @@ def test_subsecao_que_nao_cabe_no_limite_herda_o_titulo_do_pai_em_cada_pedaco() 
     assert all(s.texto.startswith("1. Pai\n1.1 Filho\n") for s in secoes)
 
 
-# --- Títulos e exceções -----------------------------------------------------------------
-
-
 def test_titulo_de_excecao_com_espaco_nao_separavel_apos_o_numero_fica_inteiro() -> None:
     secoes = _dividir("4.\xa0Despesas não elegíveis\nTexto da exceção.")
     assert [(s.numero, s.tipo) for s in secoes] == [("4", "excecao")]
@@ -118,7 +106,7 @@ def test_titulo_com_mais_de_120_caracteres_nao_vira_secao() -> None:
 
 
 def test_limitacao_numero_sem_espaco_depois_do_ponto_nao_vira_secao() -> None:
-    """LIMITAÇÃO CONHECIDA (aceita pelo po): '4.Prazo', sem espaço depois do ponto, não é
+    """LIMITAÇÃO CONHECIDA (aceita): '4.Prazo', sem espaço depois do ponto, não é
     cabeçalho de seção. A linha continua no corpo da seção anterior, junto com o texto dela.
     Este teste fixa o comportamento atual; se a regra mudar, ele deve ser atualizado de
     propósito.
@@ -127,9 +115,6 @@ def test_limitacao_numero_sem_espaco_depois_do_ponto_nao_vira_secao() -> None:
     secoes = _dividir(texto)
     assert [s.numero for s in secoes] == ["3"]
     assert secoes[0].texto == "3. Regras\nCorpo da regra.\n4.Prazo\nTexto do prazo."
-
-
-# --- Limites ----------------------------------------------------------------------------
 
 
 def test_cabecalho_de_contexto_maior_que_o_limite_nao_estoura_o_tamanho_maximo() -> None:

@@ -1,8 +1,4 @@
-"""Testes dos metadados (código, título, versão e data) da primeira página.
-
-Os PDFs reais são lidos de `base_conhecimento/`. Os casos de borda usam texto sintético,
-no mesmo layout da tabela de identificação, e PDFs criados em `tmp_path`.
-"""
+"""Testes dos metadados da primeira página: PDFs reais e texto sintético no mesmo layout."""
 
 from __future__ import annotations
 
@@ -39,10 +35,9 @@ CAMINHO_FICTICIO = Path("ficticio.pdf")
 
 
 def _pdf_com_texto_sem_tabela(caminho: Path) -> Path:
-    """Grava um PDF de uma página com texto simples, sem tabela de identificação.
+    """PDF de uma página sem tabela de identificação.
 
-    O `PdfWriter` não grava texto, então o conteúdo da página é escrito diretamente.
-    Só texto ASCII, para não depender de codificação de fonte.
+    O `PdfWriter` não grava texto, então o conteúdo é escrito direto, só em ASCII.
     """
     linhas = ("Texto de teste sem tabela de identificacao",)
     conteudo = "BT /F1 12 Tf 72 780 Td " + " ".join(f"({linha}) Tj 0 -14 Td" for linha in linhas)
@@ -217,11 +212,7 @@ def test_codigo_fora_do_padrao_levanta_erro_citando_o_campo_codigo(codigo_invali
 
 
 def test_sem_titulo_a_linha_acima_do_subtitulo_e_o_numero_da_pagina_e_e_recusada() -> None:
-    """Sem a linha do título, a linha acima do subtítulo é "Página 1".
-
-    Ela é recusada porque não está em caixa alta (`isupper` falha), não pelo filtro de
-    cabeçalho. Por isso o teste exercita a checagem de caixa alta, não o prefixo AGRICOPPEL.
-    """
+    # Recusada pela checagem de caixa alta (`isupper`), não pelo prefixo AGRICOPPEL.
     texto = TEXTO_PRIMEIRA_PAGINA.replace(" POLÍTICA DE REEMBOLSO\n", "", 1)
 
     with pytest.raises(ErroDocumento) as info:
@@ -231,12 +222,7 @@ def test_sem_titulo_a_linha_acima_do_subtitulo_e_o_numero_da_pagina_e_e_recusada
 
 
 def test_linha_em_caixa_alta_sem_prefixo_agricoppel_e_aceita_como_titulo() -> None:
-    """O filtro de cabeçalho só exclui linhas que começam com `AGRICOPPEL`.
-
-    Outra linha em caixa alta acima do subtítulo é aceita como título, mesmo que seja um
-    cabeçalho que não começa com esse prefixo. Esse é o comportamento atual e fica explícito
-    aqui: se um cabeçalho novo aparecer nesse formato, ele vira título.
-    """
+    # Comportamento atual, explícito: outro cabeçalho em caixa alta sem o prefixo vira título.
     texto = TEXTO_PRIMEIRA_PAGINA.replace(
         " POLÍTICA DE REEMBOLSO\n", " MATERIAL FICTÍCIO PARA AVALIAÇÃO\n", 1
     )

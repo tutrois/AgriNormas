@@ -1,15 +1,8 @@
 """Regressão de integração: perguntas sobre documentos necessários e perguntas fora da base.
 
-Origem: "Quais documentos preciso para solicitar reembolso" era recusada e "Quais documentos
-preciso para solicitar férias?" recebia uma frase de ausência inventada. A correção trocou o
-limiar por um piso de cosseno 0,40 com TOP_K 8 (ADR-011), passou o prompt para 1.9 e fez o
-validador recusar texto sem citação e ausência sem sustentação nos trechos citados.
-
-Estas perguntas não fazem parte de `perguntas.md` (a tabela do `po` com as sete perguntas de
-aceite). São casos de regressão do `tester`, por isso o texto fica neste arquivo.
-
-Todos os testes usam a composição real (`montar_assistente_do_ambiente` e `responder`) e só rodam
-com `pytest -m integracao`, com a chave do `.env`.
+Estas perguntas não estão em `perguntas.md`, por isso o texto fica aqui. Só rodam com
+`pytest -m integracao`. Cobrem o piso de cosseno 0,40 com TOP_K 8 (ADR-011), que evita recusar
+pergunta com evidência e inventar ausência para pergunta sem evidência.
 """
 
 from __future__ import annotations
@@ -42,9 +35,6 @@ def _cita(resposta: Resposta, documento: str, secao: str) -> bool:
     return any(f.documento == documento and f.secao == secao for f in resposta.fontes)
 
 
-# Documentos para reembolso
-
-
 def test_documentos_para_reembolso_nao_recebe_recusa(respostas: dict[str, Resposta]) -> None:
     assert respostas[PERGUNTA_DOCUMENTOS_REEMBOLSO].evidencia_suficiente is True
 
@@ -61,9 +51,6 @@ def test_documentos_para_reembolso_menciona_comprovante_fiscal(
     texto = respostas[PERGUNTA_DOCUMENTOS_REEMBOLSO].texto.casefold()
 
     assert "comprovante fiscal" in texto
-
-
-# Documentos para férias
 
 
 def test_documentos_para_ferias_nao_recebe_recusa(respostas: dict[str, Resposta]) -> None:
@@ -91,9 +78,6 @@ def test_documentos_para_ferias_nao_afirma_ausencia_no_documento(
     frase_de_ausencia: str, respostas: dict[str, Resposta]
 ) -> None:
     assert frase_de_ausencia not in respostas[PERGUNTA_DOCUMENTOS_FERIAS].texto.casefold()
-
-
-# Fora da base
 
 
 @pytest.mark.parametrize("pergunta", PERGUNTAS_FORA_DA_BASE)

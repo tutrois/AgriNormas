@@ -1,15 +1,8 @@
-"""Robustez de ponta a ponta do assistente (HIST-023).
+"""Robustez de ponta a ponta do assistente: cada caso termina em erro tratado ou em recusa
+controlada (`Resposta.sem_evidencia()`), nunca em exceção não tratada.
 
-Cada caso termina em erro tratado (`ErroDocumento`, `ErroBusca`, `ErroGeracao`,
-`ConfiguracaoInvalida`, `PerguntaInvalida`) ou em recusa controlada (`Resposta.sem_evidencia()`),
-nunca em exceção não tratada.
-
-Usa a composição real (`montar_assistente` e `responder`) e troca só a rede: o provedor de
-embeddings devolve sempre o mesmo vetor, e o cliente da OpenAI é falso. O cache vai para
-`tmp_path`, e a configuração vem de um mapa explícito, sem ler o `.env`.
-
-A injeção de instrução (TSK-023.2) usa um PDF mínimo gerado no próprio teste, com o texto
-malicioso dentro de uma seção do documento.
+Usa a composição real e troca só a rede. A injeção de instrução usa um PDF mínimo gerado no
+próprio teste, com o texto malicioso dentro de uma seção do documento.
 """
 
 from __future__ import annotations
@@ -217,9 +210,6 @@ def pasta_com_instrucao_maliciosa(tmp_path: Path) -> Path:
     return pasta
 
 
-# Documentos: PDF inexistente, corrompido e pasta sem PDF
-
-
 def test_pdf_inexistente_levanta_erro_documento_citando_o_caminho(tmp_path: Path) -> None:
     caminho = tmp_path / "nao_existe.pdf"
 
@@ -251,9 +241,6 @@ def test_pdf_corrompido_na_montagem_levanta_erro_documento_citando_o_arquivo(
     assert "ruim.pdf" in str(erro.value)
 
 
-# Configuração: chave ausente
-
-
 def test_chave_ausente_levanta_configuracao_invalida_citando_o_nome_da_variavel(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -266,9 +253,6 @@ def test_chave_ausente_levanta_configuracao_invalida_citando_o_nome_da_variavel(
         composicao.montar_assistente_do_ambiente()
 
     assert "OPENAI_API_KEY" in str(erro.value)
-
-
-# Pergunta: vazia, só com espaços e tamanho
 
 
 @pytest.mark.parametrize(
@@ -317,9 +301,6 @@ def test_pergunta_com_500_caracteres_e_aceita_e_chega_a_busca(
     assert len(provedor.pedidos) == 2
 
 
-# Erro de API: geração
-
-
 def _erro_de_geracao(classe: type[Exception], **kwargs: Any) -> Exception:
     requisicao = httpx2.Request(
         "POST",
@@ -358,9 +339,6 @@ def test_erro_de_api_na_geracao_vira_erro_geracao_sem_expor_a_chave(
     assert "Authorization" not in str(capturado.value)
 
 
-# Erro de API: embeddings
-
-
 def test_erro_de_embedding_na_montagem_levanta_erro_busca(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -375,9 +353,6 @@ def test_erro_de_embedding_na_consulta_levanta_erro_busca(
 
     with pytest.raises(ErroBusca):
         assistente.responder(PERGUNTA_VALIDA)
-
-
-# Saída do modelo inválida: recusa controlada, nunca exceção
 
 
 @pytest.mark.parametrize(
@@ -416,9 +391,6 @@ def test_resposta_do_modelo_sem_escolhas_levanta_erro_geracao(
 
     with pytest.raises(ErroGeracao):
         assistente.responder(PERGUNTA_VALIDA)
-
-
-# Injeção de instrução em documento (TSK-023.2)
 
 
 def _mensagem_do_usuario(cliente: ClienteFalso) -> str:

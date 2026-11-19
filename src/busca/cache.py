@@ -1,13 +1,8 @@
-"""Cache dos vetores do índice em disco (HIST-012, TSK-012.1).
+"""Cache dos vetores do índice em disco, chaveado pelo hash do texto e pelo modelo.
 
-Cada linha do arquivo guarda o hash do texto indexado, o nome do modelo de embedding e o
-vetor. Um vetor só é reaproveitado quando hash e modelo batem com os atuais: outro modelo
-invalida o cache, e um texto alterado recebe hash novo e é recalculado.
-
-O arquivo é gravado com `numpy.savez` e lido com `allow_pickle=False`, para que um arquivo
-adulterado não execute código. Leitura falha (arquivo ausente, ilegível ou inconsistente)
-devolve cache vazio e registra só um aviso, sem conteúdo. Gravação falha também não
-interrompe a aplicação: o índice já está em memória e o cache é recalculado depois.
+Lido com `allow_pickle=False`, para que um arquivo adulterado não execute código. Falha de
+leitura ou de gravação vira só um aviso no log, sem conteúdo: o índice já está em memória e o
+cache é recalculado depois.
 """
 
 from __future__ import annotations
@@ -42,12 +37,12 @@ _ERROS_DE_LEITURA = (OSError, ValueError, EOFError, zipfile.BadZipFile)
 
 
 class _ConteudoInvalido(Exception):
-    """Uso interno: o arquivo abriu, mas as colunas ou os valores não fecham."""
+    """O arquivo abriu, mas as colunas ou os valores não fecham."""
 
 
 @dataclass(frozen=True)
 class EntradaCache:
-    """Vetor de um chunk, identificado pelo hash do texto indexado e pelo modelo."""
+    """Vetor de uma entrada do índice, identificado pelo hash do texto e pelo modelo."""
 
     hash_texto: str
     modelo: str
@@ -55,21 +50,20 @@ class EntradaCache:
 
 
 def hash_texto(texto: str) -> str:
-    """SHA-256 em hexadecimal do texto em UTF-8. Mesmo texto, mesmo hash, em qualquer execução."""
+    """SHA-256 hexadecimal do texto em UTF-8, estável entre execuções."""
     return hashlib.sha256(texto.encode("utf-8")).hexdigest()
 
 
 class RepositorioCacheVetores:
-    """Lê e grava o arquivo de cache no caminho recebido. Não usa nenhum caminho fixo."""
+    """Lê e grava o arquivo de cache no caminho recebido."""
 
     def __init__(self, caminho: Path) -> None:
         self._caminho = caminho
 
     def ler(self, modelo: str) -> dict[str, Vetor]:
-        """Devolve `{hash_texto: vetor}` das linhas gravadas com o `modelo` dado.
+        """Devolve `{hash_texto: vetor}` das linhas do `modelo` dado.
 
-        Arquivo ausente devolve `{}` em silêncio (primeira execução). Arquivo ilegível, sem
-        as colunas esperadas ou com valores inválidos também devolve `{}`, com aviso no log.
+        Arquivo ausente devolve `{}` em silêncio; ilegível ou inconsistente, `{}` com aviso.
         """
         try:
             arquivo = np.load(self._caminho, allow_pickle=False)
@@ -91,8 +85,7 @@ class RepositorioCacheVetores:
     def gravar(self, entradas: Sequence[EntradaCache]) -> None:
         """Substitui o arquivo pelas `entradas` atuais, de forma atômica.
 
-        Sequência vazia grava um cache vazio, para que vetores de documentos removidos
-        não fiquem no disco. Falha de escrita vira aviso no log e não levanta exceção.
+        Sequência vazia grava cache vazio. Falha de escrita vira aviso, sem exceção.
         """
         temporario = self._caminho.with_name(self._caminho.name + _SUFIXO_TEMPORARIO)
         try:
@@ -110,7 +103,7 @@ class RepositorioCacheVetores:
 def _montar_colunas(
     entradas: Sequence[EntradaCache],
 ) -> tuple[NDArray[np.str_], NDArray[np.str_], NDArray[np.float64]]:
-    """Hashes, modelos e vetores em colunas paralelas. Sem entradas, as três ficam vazias."""
+    """Hashes, modelos e vetores em colunas paralelas."""
     if not entradas:
         return (
             np.array([], dtype=str),

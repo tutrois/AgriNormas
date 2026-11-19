@@ -1,37 +1,12 @@
-"""Validação da saída do modelo e das citações (HIST-015).
+"""Validação da saída do modelo e das citações.
 
-Função pura: recebe o texto devolvido pelo modelo e os trechos recuperados, e devolve uma
-`Resposta`. Não sabe de rede nem do SDK. É a última barreira contra citação inventada, e não
-depende do modelo: toda fonte citada precisa existir entre os trechos recuperados.
+Função pura, sem rede nem SDK. É a última barreira contra citação inventada e não depende do
+modelo: toda fonte citada precisa existir entre os trechos recuperados. Saída inválida vira
+`Resposta.sem_evidencia()`, com motivo fixo em log; o conteúdo do modelo nunca entra no log.
 
-Quando a saída não serve, a função devolve `Resposta.sem_evidencia()` e registra o motivo em
-log, com mensagem fixa. O conteúdo do modelo nunca entra no log.
-
-Regras de decisão, em ordem:
-1. `evidencia_suficiente` falso: recusa.
-2. Texto que nega evidência (ex.: "não há evidência") é recusado, mesmo que cite trecho
-   recuperado. A negação é tratada como recusa inteira, sem exceção por citação no texto.
-3. Texto vazio, lista `fontes_citadas` vazia, texto sem nenhuma citação entre colchetes, ou
-   qualquer citação (na lista ou no texto) que não esteja entre os trechos recuperados: a saída é
-   inválida e vira recusa. A citação no texto é exigida pela regra 3 do prompt; uma resposta sem
-   ela costuma ser uma frase de ausência sem trecho que a sustente.
-4. Afirmação de ausência sem sustentação: se o texto diz que o documento (ou a norma, a política,
-   o procedimento, o trecho) não define, não estabelece, não traz, não especifica, não prevê, não
-   determina ou não fixa algo, cada palavra de conteúdo desse objeto precisa aparecer no texto
-   dos trechos citados. Assim, "O documento não estabelece limite mensal de combustível" passa
-   quando o trecho citado fala em limite mensal de combustível, e "O documento não define o
-   horário do refeitório" é recusado quando nenhum trecho citado fala em refeitório. Palavras
-   genéricas (ex.: "valor", "informação") e curtas são ignoradas. As palavras são comparadas por
-   um radical: plural trocado pelo singular ("mensais"/"mensal", "viagens"/"viagem",
-   "exceções"/"exceção"), sem a vogal final de gênero ("diário"/"diária") e truncado em 6
-   caracteres ("reembolso"/"reembolsadas"). O complemento "e não trata de ...", "ou ..." ou
-   "nem ..." não é conferido, porque descreve o que o trecho não cobre.
-   Esta trava é heurística e tem cobertura parcial: só reconhece a forma "documento (norma,
-   política...) não define/estabelece/..." com sujeito explícito. Voz passiva ("não é definido
-   pelo documento"), sinônimos do objeto ("teto" por "limite") e outras construções passam sem
-   conferência. Ela reduz frases de ausência inventadas, mas não as elimina.
-5. Caso contrário, devolve a resposta com as fontes: primeiro as de `fontes_citadas`, depois as
-   citações do texto que não estavam na lista, sem repetição.
+A conferência de afirmações de ausência ("o documento não define X") é heurística: só reconhece
+sujeito explícito com verbo ativo. Voz passiva ("não é definido pelo documento") e sinônimos do
+objeto passam sem conferência.
 """
 
 from __future__ import annotations
@@ -168,7 +143,6 @@ def validar_saida(saida: str, trechos: Sequence[Trecho]) -> Resposta:
 
 
 def _validar(bruta: _SaidaModelo, trechos: Sequence[Trecho]) -> Resposta:
-    """Aplica as regras de decisão descritas no módulo."""
     if not bruta.evidencia_suficiente:
         return Resposta.sem_evidencia()
 
@@ -196,12 +170,7 @@ def _validar(bruta: _SaidaModelo, trechos: Sequence[Trecho]) -> Resposta:
 
 
 def _ler_saida(saida: str) -> _SaidaModelo:
-    """Confere a forma do JSON.
-
-    `RecursionError` é tratado como JSON inválido: um texto com aninhamento extremo esgota a
-    pilha do parser. O `raise` fica fora do `except`, para que o erro do parser não fique em
-    `__context__`.
-    """
+    """`RecursionError` conta como JSON inválido: aninhamento extremo esgota a pilha do parser."""
     dados: object
     try:
         dados = json.loads(saida)
@@ -289,12 +258,7 @@ def _palavras_de_conteudo(texto: str) -> list[str]:
 
 
 def _radical(palavra: str) -> str:
-    """Radical grosseiro para tolerar flexão, sobre a palavra já normalizada.
-
-    Troca a terminação de plural (`mensais` vira `mensal`, `viagens` vira `viagem`, `excecoes`
-    vira `excecao`), tira a vogal final de gênero (`diaria` e `diario` viram `diari`) e trunca em
-    `TAMANHO_RADICAL` caracteres (`reembolso` e `reembolsadas` viram `reembo`).
-    """
+    """Radical grosseiro (plural, vogal final, truncamento) para tolerar flexão."""
     singular = _singular(palavra)
     if len(singular) > TAMANHO_MINIMO_PALAVRA_CONTEUDO and singular.endswith(VOGAIS_FINAIS):
         singular = singular[:-1]

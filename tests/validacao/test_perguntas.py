@@ -1,24 +1,11 @@
-"""Suíte de validação das sete perguntas de `perguntas.md` (HIST-022).
+"""Suíte de validação das perguntas de `perguntas.md`, fonte única das perguntas e das fontes.
 
-Fonte única: as perguntas e as fontes esperadas vêm de `perguntas.md`.
-Nenhum texto de pergunta é copiado para este arquivo.
+Offline (padrão): embeddings de `vetores_gravados.npz` e gerador falso que cita todos os trechos
+recuperados. Confere recuperação e validação das fontes, não a redação.
+Integração (`pytest -m integracao`): API real. O "Deve conter" só é conferido por inspeção.
 
-Dois modos, ambos pela composição real (`montar_assistente_do_ambiente` e `responder`):
-
-- offline (padrão, sem marcador): embeddings de `vetores_gravados.npz`, gravados uma vez por
-  `gravar_vetores.py` a partir de uma execução real. Gerador falso determinístico que cita todos
-  os trechos recuperados. Não chama a API e não depende do `.env` local.
-- integração (`pytest -m integracao`): API real, com a chave e a configuração do `.env`.
-
-Limite do modo offline: o gerador falso não lê o texto, então o teste verifica a recuperação e a
-validação das fontes, não a redação. O conteúdo da coluna "Deve conter" só é conferido na
-integração, e mesmo assim por inspeção, porque a tabela descreve o conteúdo em paráfrase.
-
-Referências de FAQ (`§faq-N`): `busca.calibracao.ReferenciaSecao` só aceita número de seção, e
-mudar o tipo dela é mudança de contrato (exige ADR). Por isso esta suíte lê a coluna de fontes
-com `ReferenciaTextual`, que guarda a seção como texto (`6`, `2`, `faq-5`). A suíte não usa
-`ler_perguntas_validacao` para as fontes, porque ele descarta `§faq-N` e a pergunta 7 pareceria
-não ter evidência.
+As fontes usam `ReferenciaTextual` porque `ReferenciaSecao` só aceita número de seção (mudar o
+tipo exige ADR) e `ler_perguntas_validacao` descarta `§faq-N`.
 """
 
 from __future__ import annotations
@@ -123,7 +110,7 @@ PERGUNTAS_COM_MAIS_DE_UM_DOCUMENTO = tuple(
 )
 
 # Perguntas 6 e 7 tratam do mesmo fato (limite de combustível), mas não têm a mesma exigência.
-# Pela decisão de 2026-11-18, nenhuma das duas recusa: ambas citam FRO-POL-002 §faq-5, dizem que o
+# Nenhuma das duas recusa: ambas citam FRO-POL-002 §faq-5, dizem que o
 # documento não estabelece limite mensal de combustível e não informam valor, número, R$ nem
 # percentual. Só a pergunta 6 tem período ("por viagem"), então só ela exige a menção a limite por
 # viagem. A pergunta 7 não tem período e não deve exigir essa frase.
@@ -134,7 +121,7 @@ PERGUNTAS_EXIGEM_LIMITE_POR_VIAGEM = tuple(
     p for p in PERGUNTAS if p.numero in NUMEROS_EXIGEM_LIMITE_POR_VIAGEM
 )
 
-# Casos conhecidos que falham hoje, com o bug registrado no relatório da HIST-022. A marca é
+# Casos conhecidos que falham hoje, com o bug registrado no relatório de testes. A marca é
 # `xfail(strict=True)`: ela só registra a falha conhecida, não altera o critério. Quando o bug
 # for corrigido, a suíte acusa (XPASS), e a marca deve sair.
 # Offline a busca usa o piso de cosseno 0,40 e TOP_K 8 (ADR-011): entram as 8 seções mais
@@ -278,9 +265,6 @@ def respostas_integracao() -> dict[int, Resposta]:
     return {p.numero: assistente.responder(p.texto) for p in PERGUNTAS}
 
 
-# Leitura da tabela
-
-
 def test_tabela_tem_as_sete_perguntas_numeradas_de_um_a_sete() -> None:
     assert [p.numero for p in PERGUNTAS] == [1, 2, 3, 4, 5, 6, 7]
 
@@ -318,9 +302,6 @@ def test_verificacao_de_valor_ignora_codigo_de_documento_e_secao() -> None:
 
 def test_verificacao_de_valor_detecta_numero_fora_das_citacoes() -> None:
     assert _tem_valor_ou_limite("O limite é de 300 litros.") is True
-
-
-# Offline
 
 
 @pytest.mark.parametrize("pergunta", _casos(PERGUNTAS_COM_FONTES, BUGS_OFFLINE_FONTES))
@@ -365,9 +346,6 @@ def test_offline_pergunta_com_dois_documentos_cita_os_dois(
     documentos_esperados = {r.documento for r in pergunta.fontes}
 
     assert documentos_esperados <= _documentos(respostas_offline[pergunta.numero])
-
-
-# Integração (API real)
 
 
 @pytest.mark.integracao

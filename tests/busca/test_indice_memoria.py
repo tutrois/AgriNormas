@@ -1,4 +1,4 @@
-"""Testes do índice vetorial em memória (HIST-010)."""
+"""Testes do índice vetorial em memória."""
 
 import math
 import warnings

@@ -1,8 +1,4 @@
-"""Leitor de PDF com pypdf: extrai o texto bruto de cada página, sem limpá-lo.
-
-A limpeza (cabeçalho, rodapé, espaços e hifenização) é responsabilidade de
-`limpeza.py` (HIST-005). Este módulo só lê.
-"""
+"""Leitor de PDF com pypdf: extrai o texto bruto de cada página, sem limpá-lo."""
 
 from __future__ import annotations
 
@@ -17,7 +13,6 @@ from nucleo.erros import ErroDocumento
 from nucleo.modelos import Pagina
 
 PRIMEIRA_PAGINA: Final[int] = 1
-"""Numeração humana das páginas: a primeira página do PDF é a de número 1."""
 
 # Exceções que o pypdf levanta sem herdar de `PyPdfError`: `NotImplementedError` para
 # filtro de stream não suportado e `ValueError` para cmap malformado. São tratadas
@@ -54,11 +49,9 @@ class LeitorPdf:
 
 
 def _extrair_textos(caminho: Path) -> tuple[str, ...]:
-    """Lê o PDF e devolve o texto de cada página, na ordem original.
+    """Converte erros de arquivo e do pypdf em `ErroDocumento` (`from None`, sem traceback).
 
-    Converte erros de arquivo e de biblioteca em `ErroDocumento` com `from None`,
-    para não expor detalhes internos do pypdf nem o traceback original. O erro
-    original é registrado em nível DEBUG, sem conteúdo do documento.
+    O erro original vai para o log em DEBUG, sem conteúdo do documento.
     """
     try:
         with caminho.open("rb") as arquivo:

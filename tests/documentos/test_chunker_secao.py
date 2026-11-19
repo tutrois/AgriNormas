@@ -1,11 +1,7 @@
-"""Testes do chunking por seção (HIST-007): PDFs reais e textos sintéticos para as bordas.
+"""Testes do chunking por seção, com PDFs reais e textos sintéticos.
 
-Os testes com PDFs usam `LeitorPdf`, `limpar_paginas` e `ler_metadados` de verdade, e o
-código do documento vem da própria primeira página, como no fluxo de produção.
-
-Os textos sintéticos passam por `_um_paragrafo_por_linha`, que monta os pares
-`(pagina, texto)` no formato de `limpar_paginas`: um par por parágrafo. Um par nunca tem
-quebra de linha interna, então um texto com várias linhas vira vários pares.
+Os textos sintéticos passam por `_um_paragrafo_por_linha`: um par `(pagina, texto)` por
+linha, como `limpar_paginas` devolve (um par nunca tem quebra de linha interna).
 """
 
 from __future__ import annotations
@@ -128,12 +124,7 @@ def _secoes(nome: str) -> tuple[Secao, ...]:
 
 
 def _separar_preambulo(nome: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """Divide os parágrafos limpos do PDF em (preâmbulo, a partir da seção 1).
-
-    O preâmbulo é a capa, a tabela de identificação e o resumo, antes do primeiro "1. ".
-    Por decisão de HIST-007 esse texto não vira chunk. Os campos de identificação (código,
-    versão, data e título) são lidos por `ler_metadados`, não pelo chunker.
-    """
+    """Parágrafos limpos como (preâmbulo, a partir da seção 1). O preâmbulo não vira chunk."""
     textos = tuple(texto for _, texto in _pares(nome))
     inicio = next(i for i, texto in enumerate(textos) if texto.startswith("1. "))
     return textos[:inicio], textos[inicio:]
@@ -169,9 +160,6 @@ def _posicao_da_sequencia(fluxo: list[str], palavras: list[str], inicio: int) ->
         if fluxo[posicao : posicao + tamanho] == palavras:
             return posicao
     return None
-
-
-# --- PDFs reais -------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(("nome", "sequencia"), SEQUENCIAS_POR_PDF.items())
@@ -227,14 +215,12 @@ def test_nenhum_chunk_esta_vazio(nome: str) -> None:
 
 @pytest.mark.parametrize("nome", SEQUENCIAS_POR_PDF)
 def test_texto_dos_chunks_cobre_o_texto_limpo_a_partir_da_secao_1_em_ordem(nome: str) -> None:
-    """A cobertura começa na seção 1: o preâmbulo fica fora dos chunks por decisão."""
     _, a_partir_da_secao_1 = _separar_preambulo(nome)
     assert _cobre_em_ordem(a_partir_da_secao_1, _secoes(nome))
 
 
 @pytest.mark.parametrize("nome", SEQUENCIAS_POR_PDF)
 def test_preambulo_real_existe_e_nao_aparece_em_nenhum_chunk(nome: str) -> None:
-    """Confirma que o preâmbulo (capa, identificação, resumo) é de fato excluído dos chunks."""
     preambulo, _ = _separar_preambulo(nome)
     assert preambulo, "o PDF deveria ter texto antes da seção 1"
     textos_dos_chunks = [secao.texto for secao in _secoes(nome)]
@@ -278,9 +264,6 @@ def test_chunking_e_determinista_para_o_mesmo_pdf() -> None:
     primeira = ChunkerPorSecao().dividir(_codigo(nome), _pares(nome))
     segunda = ChunkerPorSecao().dividir(_codigo(nome), _pares(nome))
     assert primeira == segunda
-
-
-# --- Textos sintéticos: bordas ----------------------------------------------------------
 
 
 def test_texto_vazio_devolve_tupla_vazia() -> None:

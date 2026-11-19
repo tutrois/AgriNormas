@@ -1,9 +1,4 @@
-"""Testes do `LeitorPdf` com os PDFs reais e com PDFs sintéticos de borda.
-
-Os PDFs sem texto são criados de verdade com `PdfWriter` (páginas em branco válidas),
-por isso não há mock do pypdf neste arquivo, exceto onde a exceção só pode ser
-provocada artificialmente (`LimitReachedError`).
-"""
+"""Testes do `LeitorPdf`. Só `LimitReachedError` é provocada por mock; o resto usa PDFs reais."""
 
 from __future__ import annotations
 
@@ -31,7 +26,6 @@ DIMENSAO_PAGINA_A4 = (595, 842)
 
 
 def _criar_pdf_em_branco(caminho: Path, paginas: int) -> Path:
-    """Grava um PDF válido com `paginas` páginas sem nenhum texto."""
     escritor = PdfWriter()
     for _ in range(paginas):
         escritor.add_blank_page(*DIMENSAO_PAGINA_A4)

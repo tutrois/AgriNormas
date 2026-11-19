@@ -1,8 +1,6 @@
-"""Regras de chunking como dados (HIST-007): títulos de exceção, FAQ e tamanho máximo.
+"""Regras de chunking como dados: títulos de exceção, FAQ e tamanho máximo.
 
-Este módulo só guarda constantes. A lógica que as usa fica em `chunker_secao.py`, para que
-ajustar uma regra (ex.: incluir uma nova seção que não pode ser dividida) não exija mexer
-no algoritmo.
+Só constantes; a lógica fica em `chunker_secao.py`.
 """
 
 from __future__ import annotations
@@ -13,21 +11,17 @@ from typing import Final
 RE_CABECALHO_SECAO: Final[re.Pattern[str]] = re.compile(
     r"(?P<numero>\d+)\.\s+(?P<titulo>[A-ZÀ-Ý].*)"
 )
-"""Seção de primeiro nível, ex.: `6. Prazo e fluxo de solicitação`.
-
-Exige o ponto logo depois do número e um espaço, então não casa com `6.1 Exemplo`.
-"""
+"""Seção de primeiro nível (`6. Prazo e fluxo`). Exige o ponto, então não casa `6.1 Exemplo`."""
 
 RE_CABECALHO_SUBSECAO: Final[re.Pattern[str]] = re.compile(
     r"(?P<numero>\d+(?:\.\d+)+)\s+(?P<titulo>[A-ZÀ-Ý].*)"
 )
-"""Subseção, ex.: `6.1 Exemplo de contagem do prazo`. Aceita mais de um nível (`3.1.2`)."""
+"""Subseção (`6.1 Exemplo`), com um ou mais níveis (`3.1.2`)."""
 
 TERMINADOR_PERGUNTA: Final[str] = "?"
 """Parágrafo que termina com este caractere é a pergunta de um par de FAQ."""
 
 PREFIXO_NUMERO_FAQ: Final[str] = "faq-"
-"""Prefixo do número de cada par de FAQ, ex.: `faq-1`."""
 
 TAMANHO_MAXIMO_CHUNK: Final[int] = 1200
 """Tamanho máximo, em caracteres, de um chunk dividido por parágrafo. Padrão do construtor."""

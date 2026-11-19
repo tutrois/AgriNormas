@@ -1,7 +1,4 @@
-"""Testes da validação de citações da saída do modelo (HIST-015).
-
-Função pura, sem rede: nenhuma chamada à API.
-"""
+"""Testes da validação da saída do modelo e das citações."""
 
 from __future__ import annotations
 
@@ -391,9 +388,6 @@ def _trechos_faq() -> list[Trecho]:
     ]
 
 
-# Trava de citação no texto (MOTIVO_SEM_CITACAO_NO_TEXTO).
-
-
 @pytest.mark.parametrize(
     "texto",
     [
@@ -440,9 +434,6 @@ def test_texto_com_citacao_entre_colchetes_em_qualquer_posicao_e_aceito(texto: s
     assert resposta.evidencia_suficiente is True
     assert resposta.texto == texto
     assert resposta.fontes == (FONTE_REEMBOLSO,)
-
-
-# Afirmação de ausência sem sustentação (MOTIVO_AUSENCIA_SEM_SUSTENTACAO).
 
 
 @pytest.mark.parametrize(
@@ -541,9 +532,6 @@ def test_negacao_que_nao_e_afirmacao_de_ausencia_do_documento_nao_e_conferida() 
     resposta = validar_saida(_saida(resposta=texto), _trechos_recuperados())
 
     assert resposta.evidencia_suficiente is True
-
-
-# Radical e conectores da trava de ausência (revisão).
 
 
 @pytest.mark.parametrize(

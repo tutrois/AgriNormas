@@ -1,7 +1,4 @@
-"""Testes do prompt versionado e da montagem do contexto (HIST-014).
-
-Função pura: nenhuma chamada à API.
-"""
+"""Testes do prompt de fundamentação e da montagem do contexto."""
 
 from __future__ import annotations
 

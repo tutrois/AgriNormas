@@ -1,11 +1,8 @@
 """Metadados do documento (código, título, versão e data de emissão).
 
-Os dados ficam na primeira página: o título em caixa alta, o subtítulo em minúsculas logo
-abaixo dele e a tabela "Identificação", com código, versão e data. Usa o texto bruto do
-`LeitorPdf`, porque a limpeza (HIST-005) não é necessária para isso.
-
-`extrair_metadados` é função pura. `ler_metadados` faz a leitura do arquivo e chama a
-função pura. Mensagens de erro citam o caminho e o campo ausente, nunca o conteúdo do PDF.
+Ficam na primeira página: título em caixa alta, subtítulo em minúsculas e a tabela
+"Identificação". Usa o texto bruto do `LeitorPdf`. Mensagens de erro citam o caminho e o
+campo ausente, nunca o conteúdo do PDF.
 """
 
 from __future__ import annotations
@@ -19,7 +16,6 @@ from documentos.leitor_pdf import LeitorPdf
 from nucleo.erros import ErroDocumento
 
 ROTULO_TABELA: Final[str] = "Identificação"
-"""Linha que abre a tabela de identificação na primeira página."""
 
 PREFIXO_CABECALHO: Final[str] = "AGRICOPPEL"
 """Início do cabeçalho de página. Ele pode estar em caixa alta, mas nunca é título."""
@@ -81,9 +77,8 @@ class MetadadosDocumento:
 def extrair_metadados(texto_primeira_pagina: str, caminho: Path) -> MetadadosDocumento:
     """Extrai os metadados do texto bruto da primeira página. Função pura.
 
-    `caminho` entra só nas mensagens de erro. Levanta `ErroDocumento` se a tabela de
-    identificação, o título ou algum campo estiver ausente, ou se o código estiver fora do
-    padrão `AAA-BBB-000`.
+    `caminho` entra só nas mensagens de erro. Levanta `ErroDocumento` se a tabela, o título
+    ou algum campo estiver ausente, ou se o código fugir do padrão `AAA-BBB-000`.
     """
     cabecalho, tabela = _separar_tabela(texto_primeira_pagina, caminho)
     return MetadadosDocumento(
@@ -95,24 +90,14 @@ def extrair_metadados(texto_primeira_pagina: str, caminho: Path) -> MetadadosDoc
 
 
 def ler_metadados(caminho: Path) -> MetadadosDocumento:
-    """Lê o PDF em `caminho` e extrai os metadados da primeira página.
-
-    Erros de leitura (arquivo inexistente, PDF corrompido, sem texto) chegam como
-    `ErroDocumento` vindo do `LeitorPdf`.
-    """
-    # `LeitorPdf.ler` levanta `ErroDocumento` antes de devolver se o PDF não tiver páginas
-    # ou nenhum texto extraível. A tupla devolvida tem sempre ao menos uma página, então
-    # o índice 0 é seguro.
+    """Lê o PDF e extrai os metadados da primeira página; erros de leitura vêm do `LeitorPdf`."""
+    # `LeitorPdf.ler` sempre devolve ao menos uma página (ou levanta erro): o índice 0 é seguro.
     primeira_pagina = LeitorPdf().ler(caminho)[0]
     return extrair_metadados(primeira_pagina.texto, caminho)
 
 
 def _separar_tabela(texto: str, caminho: Path) -> tuple[str, str]:
-    """Devolve (texto acima do rótulo, texto da tabela real).
-
-    A tabela real é o primeiro rótulo "Identificação" cujo bloco traz código, versão ou
-    data. Um rótulo solto no corpo, sem esses dados, é ignorado.
-    """
+    """Devolve (texto acima do rótulo, texto da tabela). Rótulo solto no corpo é ignorado."""
     linhas = texto.splitlines()
     for indice, linha in enumerate(linhas):
         if linha.strip() != ROTULO_TABELA:
@@ -124,7 +109,6 @@ def _separar_tabela(texto: str, caminho: Path) -> tuple[str, str]:
 
 
 def _bloco_da_tabela(linhas: list[str], inicio: int) -> list[str]:
-    """Linhas a partir de `inicio` até o próximo rótulo ou o primeiro parágrafo longo."""
     bloco: list[str] = []
     for linha in linhas[inicio:]:
         conteudo = linha.strip()
@@ -135,13 +119,11 @@ def _bloco_da_tabela(linhas: list[str], inicio: int) -> list[str]:
 
 
 def _tem_dados_da_tabela(bloco: list[str]) -> bool:
-    """Indica se o bloco parece a tabela de identificação (traz código ou versão)."""
     texto = "\n".join(bloco)
     return _RE_CANDIDATO_CODIGO.search(texto) is not None or _RE_VERSAO.search(texto) is not None
 
 
 def _extrair_codigo(tabela: str, caminho: Path) -> str:
-    """Devolve o código da tabela, validado contra o padrão `AAA-BBB-000`."""
     candidato = _casar(_RE_CANDIDATO_CODIGO, tabela, "codigo", caminho)
     if _RE_CODIGO.fullmatch(candidato) is None:
         raise ErroDocumento(f"Campo 'codigo' fora do padrão AAA-BBB-000 em {caminho}")
@@ -149,14 +131,11 @@ def _extrair_codigo(tabela: str, caminho: Path) -> str:
 
 
 def _extrair_titulo(cabecalho: str, caminho: Path) -> str:
-    """Devolve o título, que fica uma linha acima do subtítulo.
+    """O título é a linha não vazia antes do subtítulo (a última antes do rótulo).
 
-    O subtítulo é a última linha não vazia antes do rótulo. O título é a linha não vazia
-    anterior a ele. Só é aceito se estiver em caixa alta e não começar com `PREFIXO_CABECALHO`.
-
-    Premissa do layout: o subtítulo está em minúsculas. O código não verifica isso. Se um
-    subtítulo vier em caixa alta, a linha acima dele continua sendo o título (ver o teste
-    `test_subtitulo_em_caixa_alta_usa_a_linha_acima_dele_como_titulo`).
+    Só é aceito em caixa alta e sem começar com `PREFIXO_CABECALHO`. Premissa: o subtítulo
+    está em minúsculas, mas isso não é verificado; em caixa alta, a linha acima dele ainda
+    é tomada como título.
     """
     linhas = [linha.strip() for linha in cabecalho.splitlines() if linha.strip()]
     if len(linhas) < 2:
@@ -168,7 +147,6 @@ def _extrair_titulo(cabecalho: str, caminho: Path) -> str:
 
 
 def _casar(padrao: re.Pattern[str], texto: str, grupo: str, caminho: Path) -> str:
-    """Devolve o grupo nomeado da primeira ocorrência de `padrao` em `texto`."""
     ocorrencia = padrao.search(texto)
     if ocorrencia is None:
         raise _erro_campo_ausente(grupo, caminho)
@@ -176,5 +154,4 @@ def _casar(padrao: re.Pattern[str], texto: str, grupo: str, caminho: Path) -> st
 
 
 def _erro_campo_ausente(campo: str, caminho: Path) -> ErroDocumento:
-    """Exceção para um campo da tabela de identificação que não foi encontrado."""
     return ErroDocumento(f"Campo '{campo}' ausente na tabela de identificação de {caminho}")

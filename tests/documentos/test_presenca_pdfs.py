@@ -1,8 +1,4 @@
-"""Teste de presença dos PDFs de `base_conhecimento/` (TSK-004.3).
-
-O caminho é montado a partir de `Path(__file__)`, e não do diretório de trabalho,
-para que o resultado seja o mesmo qualquer que seja a pasta de execução.
-"""
+"""Presença dos PDFs de `base_conhecimento/`, com caminho a partir de `Path(__file__)`."""
 
 from __future__ import annotations
 
@@ -20,12 +16,10 @@ RAIZ_PROJETO = Path(__file__).resolve().parents[2]
 
 
 def _pasta_base() -> Path:
-    """Pasta `base_conhecimento/` na raiz do projeto, independente do diretório atual."""
     return RAIZ_PROJETO / "base_conhecimento"
 
 
 def _ausentes(pasta: Path) -> tuple[str, ...]:
-    """Nomes esperados que não existem como arquivo dentro de `pasta`."""
     return tuple(nome for nome in NOMES_ESPERADOS if not (pasta / nome).is_file())
 
 

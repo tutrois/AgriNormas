@@ -1,7 +1,4 @@
-"""Testes do cache de vetores em disco (HIST-012).
-
-Offline: o provedor é falso e conta as chamadas. Todos os arquivos ficam em `tmp_path`.
-"""
+"""Testes do cache de vetores em disco, com provedor falso que conta as chamadas."""
 
 from __future__ import annotations
 
@@ -25,7 +22,7 @@ MODELO = "modelo-teste"
 
 
 class ProvedorContador:
-    """Provedor falso: vetor determinístico derivado do texto, e conta cada pedido."""
+    """Vetor determinístico derivado do texto; conta cada pedido."""
 
     def __init__(self) -> None:
         self.textos_enviados: list[tuple[str, ...]] = []
@@ -55,9 +52,6 @@ def _entrada(texto: str, modelo: str = MODELO) -> EntradaCache:
     return EntradaCache(hash_texto=hash_texto(texto), modelo=modelo, vetor=_vetor_do_texto(texto))
 
 
-# Hash do texto
-
-
 def test_hash_texto_e_determinístico_e_hexadecimal_de_64_caracteres() -> None:
     primeiro = hash_texto("Prazo de cinco dias")
     segundo = hash_texto("Prazo de cinco dias")
@@ -69,9 +63,6 @@ def test_hash_texto_e_determinístico_e_hexadecimal_de_64_caracteres() -> None:
 
 def test_hash_texto_muda_quando_o_texto_muda() -> None:
     assert hash_texto("Prazo de cinco dias") != hash_texto("Prazo de sete dias")
-
-
-# Leitura e gravação do repositório
 
 
 def test_arquivo_inexistente_devolve_cache_vazio_sem_criar_arquivo(tmp_path: Path) -> None:
@@ -126,9 +117,6 @@ def test_falha_de_gravacao_nao_levanta_excecao(tmp_path: Path) -> None:
     repositorio.gravar((_entrada("primeiro"),))
 
     assert repositorio.ler(MODELO) == {}
-
-
-# Arquivo corrompido ou adulterado
 
 
 def test_arquivo_corrompido_devolve_cache_vazio(tmp_path: Path) -> None:
@@ -215,9 +203,6 @@ def test_arquivo_com_tamanhos_divergentes_devolve_cache_vazio(tmp_path: Path) ->
         )
 
     assert RepositorioCacheVetores(caminho).ler(MODELO) == {}
-
-
-# Reconstrução do índice com cache (TSK-012.2)
 
 
 def test_segunda_inicializacao_sem_mudanca_nao_chama_o_provedor(tmp_path: Path) -> None:
@@ -363,11 +348,8 @@ def test_provedor_que_devolve_quantidade_errada_levanta_erro_de_busca(tmp_path: 
     assert repositorio.ler(MODELO) == {}
 
 
-# Dimensão do cache diferente da do provedor (M-29)
-
-
 class ProvedorComDimensao:
-    """Provedor falso que devolve vetores de dimensão escolhida e conta os pedidos."""
+    """Devolve vetores de dimensão escolhida e conta os pedidos."""
 
     def __init__(self, dimensao: int) -> None:
         self._dimensao = dimensao
@@ -485,9 +467,9 @@ def test_recalculo_com_dimensoes_divergentes_levanta_erro_e_preserva_o_cache_ant
 
 
 def test_sem_textos_novos_cache_de_outra_dimensao_so_falha_na_consulta_m29(tmp_path: Path) -> None:
-    # Limitação registrada na M-29: sem vetores novos não há dimensão do provedor para comparar,
-    # e a montagem não pode chamar o provedor (critério da HIST-012). O teste fixa o
-    # comportamento atual. Se a limitação for fechada, este teste deve mudar junto.
+    # Limite conhecido: sem vetores novos não há dimensão do provedor para comparar, e a
+    # montagem não pode chamar o provedor. O teste fixa esse comportamento; se o limite for
+    # fechado, ele deve mudar junto.
     repositorio = _repositorio(tmp_path)
     doc_a = [_secao("FIN-POL-001", "1")]
     construir_indice_com_cache(
@@ -500,9 +482,6 @@ def test_sem_textos_novos_cache_de_outra_dimensao_so_falha_na_consulta_m29(tmp_p
     assert provedor.chamadas == 0
     with pytest.raises(ErroBusca):
         indice.buscar((1.0, 2.0, 3.0, 4.0, 5.0), 1)
-
-
-# Perguntas de FAQ no cache (entrada extra por par de FAQ)
 
 
 def _faq(numero: str, pergunta: str) -> Secao:

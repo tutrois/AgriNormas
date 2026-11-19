@@ -1,7 +1,7 @@
-"""Testes do provedor de embeddings da OpenAI (HIST-009).
+"""Testes do provedor de embeddings da OpenAI, com cliente simulado.
 
-Usam cliente simulado: nenhuma chamada real à API. As exceções são as do SDK `openai`,
-construídas com respostas `httpx2` falsas, para que a conversão seja testada de verdade.
+As exceções são as do SDK `openai`, construídas com respostas `httpx2` falsas, para testar a
+conversão de verdade.
 """
 
 from __future__ import annotations
@@ -65,10 +65,7 @@ def _erro_conexao() -> openai.APIConnectionError:
 
 
 class ClienteSimulado:
-    """Dublê do `openai.OpenAI`: devolve ou levanta o próximo item do roteiro.
-
-    Também registra os lotes enviados, para contar as chamadas.
-    """
+    """Dublê do `openai.OpenAI`: devolve ou levanta o próximo item do roteiro; registra os lotes."""
 
     def __init__(self, roteiro: list[Any]) -> None:
         self._roteiro = list(roteiro)

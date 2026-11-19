@@ -1,23 +1,9 @@
-"""Composição de dependências (HIST-018, TSK-018.1 e TSK-018.2).
+"""Composição de dependências: único módulo que conhece as implementações concretas.
 
-É o único módulo que conhece as implementações concretas (OpenAI, numpy, pypdf). Monta as
-dependências, carrega e indexa os documentos e devolve o `AssistenteRAG`. Não decide regra
-de negócio: a recusa e as fontes ficam em `nucleo/assistente.py` (ADR-001).
-
-A montagem usa o cache de vetores (`busca.cache`) em `CAMINHO_CACHE_VETORES`. Quando o cache
-tem dimensão diferente da do provedor (M-29) e não há textos novos, o erro só aparece na
-consulta. Nesse caso `_BuscadorComReconstrucao` descarta o cache, reconstrói o índice e
-repete a pergunta uma única vez.
-
-A listagem dos documentos da base (`listar_documentos_da_base` e `listar_documentos_do_ambiente`)
-serve ao menu da interface: devolve só código, título e versão de cada PDF, sem a chave da API.
-Um PDF ilegível não derruba a lista; entra com o nome do arquivo como título.
-
-A leitura de um documento (`ler_documento_da_base` e `ler_documento_do_ambiente`) devolve as
-mesmas seções que a busca usa, na ordem do documento, para a tela "Base de conhecimento". O
-nome do arquivo vem da interface e não é confiável: só vale o de um PDF listado diretamente na
-pasta, e o caminho lido é sempre o devolvido pela listagem, nunca montado a partir do nome.
-Qualquer falha devolve `None`, sem expor `ErroDocumento`.
+Monta provedor, buscador e gerador, carrega e indexa os PDFs e devolve o `AssistenteRAG`.
+Não decide regra de negócio (ver ADR-001). As funções de listagem e leitura de documentos
+servem à interface sem exigir a chave da API. O nome de arquivo recebido da interface não é
+confiável: só vale o de um PDF listado na pasta, e o caminho lido nunca é montado a partir dele.
 """
 
 from __future__ import annotations
@@ -239,13 +225,7 @@ def _secao_do_documento(secao: Secao) -> SecaoDoDocumento:
 
 
 def _corpo_sem_titulo(secao: Secao) -> str:
-    """Remove do começo do texto as linhas de cabeçalho que o chunker inclui.
-
-    O chunker prefixa o texto com o cabeçalho da seção pai (`5. Comprovantes...`) e, em
-    subseções e FAQ, com o próprio título (`3.1 Transporte`, ou a pergunta). Remove-se até a
-    linha que repete o título (com ou sem numeração), desde que as anteriores sejam cabeçalhos
-    numerados. Sem essa linha, o texto fica intacto.
-    """
+    """Tira o cabeçalho que o chunker prefixa (seção pai e título); sem essa linha, não altera."""
     linhas = secao.texto.split("\n")
     for indice, linha in enumerate(linhas[:3]):
         if _repete_titulo(linha, secao.titulo):
@@ -289,7 +269,6 @@ def carregar_secoes(pasta: Path, tamanho_maximo: int) -> tuple[Secao, ...]:
 def _secoes_do_documento(
     caminho: Path, leitor: LeitorDocumento, chunker: Chunker
 ) -> Sequence[Secao]:
-    """Lê o PDF, extrai o código da primeira página, limpa o texto e divide em seções."""
     paginas = leitor.ler(caminho)
     codigo = extrair_metadados(paginas[0].texto, caminho).codigo
     return chunker.dividir(codigo, limpar_paginas(paginas))
@@ -305,11 +284,10 @@ def _provedor_embedding(configuracao: Configuracao) -> ProvedorEmbedding:
 
 
 class _BuscadorComReconstrucao:
-    """Implementa `Buscador` e recalcula o índice quando o cache tem outra dimensão (M-29).
+    """Implementa `Buscador` e reconstrói o índice se o cache tiver outra dimensão.
 
-    Só o erro de dimensão do índice dispara a reconstrução. Ela descarta o cache, monta o índice
-    de novo com todas as seções, regrava o cache e troca o índice em uso. A pergunta é repetida
-    uma única vez: se falhar de novo, o erro sobe, sem laço.
+    O erro de dimensão só aparece na consulta quando não há textos novos. Só ele dispara a
+    reconstrução, e a pergunta é repetida uma única vez: se falhar de novo, o erro sobe.
     """
 
     def __init__(
@@ -349,10 +327,9 @@ class _BuscadorComReconstrucao:
         )
 
     def _reconstruir(self) -> None:
-        """Descarta o cache, recalcula todos os vetores, regrava o cache e troca o índice.
+        """Recalcula os vetores e troca o índice.
 
-        O cache vazio é gravado antes do pedido ao provedor: se o recálculo falhar, não sobra
-        vetor de dimensão antiga no disco. Se o índice não for montado, o atual segue em uso.
+        O cache vazio é gravado antes: se o recálculo falhar, não sobra vetor de dimensão antiga.
         """
         self._repositorio.gravar(())
         capturador = _ProvedorCapturador(self._provedor)
@@ -380,11 +357,7 @@ def _dimensao_divergente(erro: ErroBusca) -> bool:
 def _entradas_do_cache(
     secoes: Sequence[Secao], vetores: Sequence[Vetor], modelo: str
 ) -> tuple[EntradaCache, ...]:
-    """Uma entrada de cache por vetor, com o hash do texto que foi enviado ao provedor.
-
-    Usa as mesmas entradas de `construir_indice(..., perguntas_faq=True)`, na mesma ordem,
-    para que o hash de cada pergunta de FAQ seja o da própria pergunta.
-    """
+    """Uma entrada por vetor, na mesma ordem de `construir_indice(..., perguntas_faq=True)`."""
     entradas = entradas_indexaveis(secoes, perguntas_faq=True)
     return tuple(
         EntradaCache(hash_texto=hash_texto(entrada.texto), modelo=modelo, vetor=vetor)

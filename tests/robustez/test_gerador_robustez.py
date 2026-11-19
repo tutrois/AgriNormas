@@ -1,8 +1,4 @@
-"""Casos de borda do cliente de geração da OpenAI (HIST-013), escritos pelo Tester.
-
-Usam cliente simulado: nenhuma chamada real à API. Os testes usam a interface pública
-`GeradorOpenAI.gerar` e as exceções do SDK `openai`.
-"""
+"""Casos de borda do cliente de geração da OpenAI, com cliente simulado e sem chamada à API."""
 
 from __future__ import annotations
 

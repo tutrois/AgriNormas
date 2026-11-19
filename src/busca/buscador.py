@@ -1,14 +1,7 @@
-"""Buscador semântico com limiar de similaridade (HIST-011, TSK-011.1).
+"""Buscador semântico: consulta o `Indice` e descarta o que fica abaixo do limiar.
 
-Implementa o contrato `Buscador`. Gera o embedding da pergunta, pede ao `Indice` os trechos
-mais próximos e descarta os que ficam abaixo de `limiar_similaridade`.
-
-Uma seção pode ter mais de uma entrada no índice (ex.: o texto completo e a pergunta de um
-FAQ). O buscador devolve cada seção uma vez, com a maior pontuação entre as suas entradas, e
-limita o resultado a `top_k` seções distintas.
-
-O buscador não conhece a OpenAI nem o formato interno do índice: as dependências entram
-pelo construtor (princípio D). Sem trecho acima do limiar devolve `()`, nunca `None` (ADR-007).
+Uma seção pode ter mais de uma entrada no índice (texto e pergunta de FAQ); cada seção é
+devolvida uma vez, com a maior pontuação. Sem trecho acima do limiar devolve `()` (ADR-007).
 """
 
 from __future__ import annotations
@@ -24,10 +17,10 @@ from nucleo.modelos import Secao, Trecho
 MENSAGEM_VETOR_PERGUNTA_INVALIDO = "O provedor de embeddings devolveu um vetor inesperado."
 
 MAXIMO_ENTRADAS_POR_SECAO: Final[int] = 2
-"""Entradas do índice por seção, no máximo (texto completo e pergunta de FAQ).
+"""Entradas do índice por seção, no máximo.
 
-Pedir `top_k * MAXIMO_ENTRADAS_POR_SECAO` candidatos garante `top_k` seções distintas quando elas
-existem: em qualquer prefixo do ranking, cada seção ocupa no máximo duas posições.
+Pedir `top_k * MAXIMO_ENTRADAS_POR_SECAO` candidatos garante `top_k` seções distintas quando
+elas existem, pois cada seção ocupa no máximo duas posições do ranking.
 """
 
 
@@ -54,11 +47,9 @@ class BuscadorSemantico:
         self._top_k = top_k
 
     def buscar(self, pergunta: str) -> tuple[Trecho, ...]:
-        """Devolve até `top_k` seções com pontuação maior ou igual ao limiar, da mais similar.
+        """Devolve até `top_k` seções com pontuação >= limiar, da mais similar.
 
-        Cada seção aparece uma vez, com a maior pontuação entre as suas entradas.
-        A pergunta vazia não chega aqui: a validação é do `AssistenteRAG` (TSK-017.2).
-        Falhas do provedor ou do índice propagam como `ErroBusca`.
+        A pergunta vazia é validada pelo `AssistenteRAG`. Falhas viram `ErroBusca`.
         """
         vetores = self._provedor.gerar((pergunta,))
         if len(vetores) != 1:
@@ -74,10 +65,7 @@ class BuscadorSemantico:
 
 
 def _maior_pontuacao_por_secao(trechos: Sequence[Trecho]) -> tuple[Trecho, ...]:
-    """Uma entrada por seção, a de maior pontuação, do mais para o menos similar.
-
-    Empates mantêm a ordem em que os trechos chegaram.
-    """
+    """Uma entrada por seção, a de maior pontuação; empates mantêm a ordem de chegada."""
     melhores: dict[Secao, Trecho] = {}
     for trecho in trechos:
         atual = melhores.get(trecho.secao)
