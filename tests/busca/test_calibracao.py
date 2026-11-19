@@ -99,6 +99,24 @@ def test_pontuar_separa_melhor_esperado_do_melhor_geral() -> None:
     assert resultado.melhor_esperado is not None
     assert resultado.melhor_esperado.secao == secao_esperada
     assert resultado.melhor_esperado.pontuacao == pytest.approx(0.6)
+    assert resultado.posicao_melhor_esperado == 2
+
+
+def test_posicao_do_esperado_conta_secoes_distintas() -> None:
+    # A seção geral tem duas entradas (texto e pergunta de FAQ); o esperado é a 2ª seção.
+    secao_geral = _secao("FRO-POL-002", "faq-1")
+    secao_esperada = _secao("FIN-POL-001", "6")
+    indice = IndiceEmMemoria()
+    indice.adicionar(
+        [secao_geral, secao_geral, secao_esperada], [(1.0, 0.0), (0.9, 0.436), (0.6, 0.8)]
+    )
+    pergunta = PerguntaValidacao(
+        numero=1, texto="pergunta", fontes_esperadas=(ReferenciaSecao("FIN-POL-001", 6),)
+    )
+
+    (resultado,) = pontuar_perguntas((pergunta,), ((1.0, 0.0),), indice, total_secoes=3)
+
+    assert resultado.posicao_melhor_esperado == 2
 
 
 def test_pergunta_sem_fonte_esperada_nao_tem_melhor_esperado() -> None:
@@ -109,6 +127,7 @@ def test_pergunta_sem_fonte_esperada_nao_tem_melhor_esperado() -> None:
     (resultado,) = pontuar_perguntas((pergunta,), ((1.0, 0.0),), indice, total_secoes=1)
 
     assert resultado.melhor_esperado is None
+    assert resultado.posicao_melhor_esperado is None
     assert resultado.melhor_geral is not None
 
 

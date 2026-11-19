@@ -1,8 +1,13 @@
 """Calibração do limiar de similaridade com as perguntas de validação (HIST-011, TSK-011.2).
 
 Lê os PDFs de `base_conhecimento/` pelo fluxo da produção (leitura, metadados, limpeza e
-chunking), gera os embeddings com o provedor real e pontua as seis perguntas de
+chunking), gera os embeddings com o provedor real e pontua as perguntas de
 `tests/validacao/perguntas.md`. A saída vai para o terminal. Não grava cache nem arquivos.
+
+Desde o ADR-011, `LIMIAR_SIMILARIDADE` é só um piso contra perguntas sem relação com a base, e a
+decisão de evidência fica com a geração. Por isso a tabela mostra, além das pontuações, a
+posição do melhor trecho esperado e se ele chega à geração (entre as `TOP_K` primeiras e acima
+do piso).
 
 Chamadas à API: uma para os chunks (em um lote) e uma para as perguntas. Use com moderação.
 
@@ -78,17 +83,29 @@ def _formatar_pontuacao(trecho: Trecho | None) -> str:
     return "-" if trecho is None else f"{trecho.pontuacao:.4f}"
 
 
-def _linha_tabela(resultado: PontuacaoPergunta, limiar: float) -> str:
+def _chega_a_geracao(resultado: PontuacaoPergunta, piso: float, top_k: int) -> str:
+    """`sim` quando o melhor trecho esperado fica no top-k e acima do piso; `-` sem esperado."""
+    esperado = resultado.melhor_esperado
+    posicao = resultado.posicao_melhor_esperado
+    if esperado is None or posicao is None:
+        return "-"
+    return "sim" if posicao <= top_k and esperado.pontuacao >= piso else "não"
+
+
+def _linha_tabela(resultado: PontuacaoPergunta, piso: float, top_k: int) -> str:
     melhor_esperado = resultado.melhor_esperado
     melhor_geral = resultado.melhor_geral
-    acima = "sim" if melhor_geral is not None and melhor_geral.pontuacao >= limiar else "não"
+    posicao = resultado.posicao_melhor_esperado
+    acima_piso = "sim" if melhor_geral is not None and melhor_geral.pontuacao >= piso else "não"
     return (
         f"  {resultado.pergunta.numero:<3}"
         f"{_formatar_pontuacao(melhor_esperado):>10}  "
         f"{_formatar_trecho(melhor_esperado):<18}"
+        f"{'-' if posicao is None else posicao:>5}"
         f"{_formatar_pontuacao(melhor_geral):>10}  "
-        f"{_formatar_trecho(melhor_geral):<18}"
-        f"{acima:>8}"
+        f"{_formatar_trecho(melhor_geral):<20}"
+        f"{acima_piso:>6}"
+        f"{_chega_a_geracao(resultado, piso, top_k):>8}"
     )
 
 
@@ -122,20 +139,26 @@ def main() -> int:
         _escrever(f"Falha na calibração: {erro}\n")
         return CODIGO_SAIDA_FALHA
 
-    limiar = configuracao.limiar_similaridade
-    _escrever(f"{SEPARADOR}\nCalibração do limiar de similaridade\n")
+    piso = configuracao.limiar_similaridade
+    top_k = configuracao.top_k
+    _escrever(f"{SEPARADOR}\nCalibração do piso de similaridade (ADR-011)\n")
     _escrever(f"Seções: {len(secoes)}. Entradas no índice: {total_entradas}\n")
     faq = "sim" if PERGUNTAS_FAQ else "não"
     _escrever(f"Perguntas de FAQ indexadas como entrada própria: {faq}\n")
-    _escrever(f"Limiar configurado (LIMIAR_SIMILARIDADE): {limiar:.4f}\n")
+    _escrever(f"Piso configurado (LIMIAR_SIMILARIDADE): {piso:.4f}. TOP_K: {top_k}\n")
     _escrever(f"Modelo de embedding: {configuracao.modelo_embedding}\n{SEPARADOR}\n")
     _escrever(
-        f"  {'#':<3}{'Esperado':>10}  {'Trecho esperado':<18}"
-        f"{'Geral':>10}  {'Trecho geral':<18}{'Acima?':>8}\n"
+        f"  {'#':<3}{'Esperado':>10}  {'Trecho esperado':<18}{'Pos.':>5}"
+        f"{'Geral':>10}  {'Trecho geral':<20}{'Piso?':>6}{'Top-k?':>8}\n"
     )
     for resultado in resultados:
-        _escrever(_linha_tabela(resultado, limiar) + "\n")
-    _escrever(f"{SEPARADOR}\n")
+        _escrever(_linha_tabela(resultado, piso, top_k) + "\n")
+    _escrever(
+        f"{SEPARADOR}\n"
+        "Piso?: melhor trecho geral acima do piso. Top-k?: melhor trecho esperado entre as\n"
+        "TOP_K primeiras e acima do piso, isto é, enviado à geração. Perguntas só com §faq-N\n"
+        "aparecem sem trecho esperado.\n"
+    )
     return CODIGO_SAIDA_OK
 
 

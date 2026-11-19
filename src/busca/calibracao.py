@@ -41,7 +41,7 @@ class PerguntaValidacao:
     numero: int
     texto: str
     fontes_esperadas: tuple[ReferenciaSecao, ...]
-    """Vazio para a pergunta sem resposta nos documentos (pergunta 6)."""
+    """Vazio quando a tabela não lista seção numérica (ex.: só `§faq-N`, perguntas 6 e 7)."""
 
 
 @dataclass(frozen=True)
@@ -51,6 +51,15 @@ class PontuacaoPergunta:
     pergunta: PerguntaValidacao
     melhor_esperado: Trecho | None
     melhor_geral: Trecho | None
+    posicao_melhor_esperado: int | None = None
+    """Posição (a partir de 1) do melhor trecho esperado entre as seções distintas do ranking.
+
+    Conta seções, não entradas: com perguntas de FAQ, uma seção pode ter mais de uma entrada, e
+    o `BuscadorSemantico` corta o `TOP_K` depois de juntar as entradas da mesma seção.
+
+    Com o piso de similaridade, o que decide se a seção chega à geração é ela estar entre as
+    `TOP_K` primeiras (e acima do piso), não a pontuação absoluta.
+    """
 
 
 def ler_perguntas_validacao(caminho: Path) -> tuple[PerguntaValidacao, ...]:
@@ -113,21 +122,34 @@ def pontuar_perguntas(
     for pergunta, vetor in zip(perguntas, vetores_perguntas, strict=True):
         ranking = indice.buscar(vetor, total_secoes)
         melhor_geral = ranking[0] if ranking else None
-        melhor_esperado = next(
+        posicao, melhor_esperado = next(
             (
-                trecho
-                for trecho in ranking
+                (posicao, trecho)
+                for posicao, trecho in enumerate(_uma_entrada_por_secao(ranking), start=1)
                 if any(
                     referencia.corresponde(trecho.secao) for referencia in pergunta.fontes_esperadas
                 )
             ),
-            None,
+            (None, None),
         )
         resultados.append(
             PontuacaoPergunta(
                 pergunta=pergunta,
                 melhor_esperado=melhor_esperado,
                 melhor_geral=melhor_geral,
+                posicao_melhor_esperado=posicao,
             )
         )
     return tuple(resultados)
+
+
+def _uma_entrada_por_secao(ranking: Sequence[Trecho]) -> tuple[Trecho, ...]:
+    """Mantém a primeira entrada de cada seção. O ranking vem ordenado, então é a de maior
+    pontuação, como em `BuscadorSemantico`."""
+    vistas: set[Secao] = set()
+    distintas: list[Trecho] = []
+    for trecho in ranking:
+        if trecho.secao not in vistas:
+            vistas.add(trecho.secao)
+            distintas.append(trecho)
+    return tuple(distintas)

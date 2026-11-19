@@ -49,8 +49,8 @@ def _bloco_pergunta(conteudo: str) -> str | None:
     return encontrado.group(1) if encontrado else None
 
 
-def test_versao_do_prompt_e_1_7() -> None:
-    assert PROMPT_VERSAO == "1.7"
+def test_versao_do_prompt_e_1_9() -> None:
+    assert PROMPT_VERSAO == "1.9"
 
 
 def test_prompt_contem_clausula_de_recusa() -> None:
@@ -180,7 +180,7 @@ def test_regra_7_traz_a_frase_base_quando_a_pergunta_nao_tem_periodo() -> None:
     assert "Se a pergunta não tiver período, use como base:" in PROMPT_SISTEMA
     assert (
         '"O documento não estabelece limite mensal de combustível, e o trecho não trata de '
-        'limites em outros períodos."' in PROMPT_SISTEMA
+        'limites em outros períodos [DOCUMENTO §NÚMERO]."' in PROMPT_SISTEMA
     )
 
 
@@ -190,7 +190,7 @@ def test_regra_7_traz_a_frase_base_quando_a_pergunta_tem_periodo() -> None:
     )
     assert (
         '"O documento não estabelece limite mensal de combustível e não trata de limite '
-        'por viagem."' in PROMPT_SISTEMA
+        'por viagem [DOCUMENTO §NÚMERO]."' in PROMPT_SISTEMA
     )
 
 
@@ -228,6 +228,89 @@ def test_regra_7_mantem_proibicao_de_inventar_numero_prazo_ou_limite() -> None:
         "Nenhum número, prazo ou limite pode ser inventado em nenhum desses casos."
         in PROMPT_SISTEMA
     )
+
+
+def test_regra_3_exige_citacao_no_texto_mesmo_com_a_lista_de_fontes() -> None:
+    assert (
+        f'Toda resposta com "{CAMPO_EVIDENCIA}" true precisa ter ao menos uma citação '
+        "entre colchetes no próprio texto, inclusive nos casos da regra 7" in PROMPT_SISTEMA
+    )
+    assert f'a lista "{CAMPO_FONTES}" não substitui a citação no texto' in PROMPT_SISTEMA
+
+
+def test_regra_7_tira_o_termo_negado_do_trecho_e_nao_da_pergunta() -> None:
+    assert "O termo negado vem do trecho, nunca da pergunta" in PROMPT_SISTEMA
+    assert "não troque o período do trecho pelo período da pergunta" in PROMPT_SISTEMA
+    assert (
+        'a frase "O documento não estabelece limite de combustível por viagem" está errada'
+        in PROMPT_SISTEMA
+    )
+
+
+def test_regra_8_interpreta_a_pergunta_pelo_sentido() -> None:
+    assert "8. Interprete a pergunta pelo sentido, e não pelas palavras exatas." in PROMPT_SISTEMA
+    assert '"documentos", "papéis" ou "o que preciso"' in PROMPT_SISTEMA
+
+
+def test_regra_8_manda_listar_tudo_o_que_o_trecho_exige_com_evidencia_verdadeira() -> None:
+    assert "responda listando todos os itens que o trecho exige" in PROMPT_SISTEMA
+    assert f'cite-o e marque "{CAMPO_EVIDENCIA}" como true' in PROMPT_SISTEMA
+    assert "apresente diretamente o que os trechos exigem" in PROMPT_SISTEMA
+
+
+def test_regra_8_proibe_frase_de_ausencia_so_porque_a_norma_nao_usa_o_termo_da_pergunta() -> None:
+    assert (
+        "Se a norma não usar o termo da pergunta, não diga que o documento não define, não "
+        "estabelece ou não traz esse termo" in PROMPT_SISTEMA
+    )
+    assert (
+        '"O documento não define quais documentos são necessários" está errada, porque o '
+        "trecho não nega nada: ele diz o que é exigido." in PROMPT_SISTEMA
+    )
+
+
+def test_regra_8_restringe_a_regra_7_a_negacao_explicita_do_mesmo_assunto() -> None:
+    assert (
+        "A regra 7 só vale quando o trecho contém a negação explícita sobre o mesmo assunto "
+        "da pergunta" in PROMPT_SISTEMA
+    )
+    assert "apenas porque o trecho não usa a palavra da pergunta" in PROMPT_SISTEMA
+    assert "não use um trecho que nega o valor de outro assunto" in PROMPT_SISTEMA
+
+
+def test_regra_8_manda_aplicar_a_regra_2_quando_nenhum_trecho_trata_do_assunto() -> None:
+    assert (
+        "Quando nenhum trecho tratar do assunto da pergunta, aplique a regra 2, mesmo que "
+        "existam trechos sobre outros assuntos." in PROMPT_SISTEMA
+    )
+
+
+def test_regra_9_traz_exemplo_ficticio_que_nao_deve_ser_citado() -> None:
+    assert "9. Exemplo da regra 7 com período diferente, com documento fictício" in PROMPT_SISTEMA
+    assert "não cite ABC-001 em respostas reais" in PROMPT_SISTEMA
+
+
+def test_regra_9_mostra_o_termo_negado_mantido_nas_duas_formas_de_pergunta() -> None:
+    assert (
+        '"O documento não estabelece limite diário de horas extras e não trata de limite por '
+        "semana [ABC-001 §faq-2]." in PROMPT_SISTEMA
+    )
+    assert (
+        '"O documento não estabelece limite diário de horas extras, e o trecho não trata de '
+        "limites em outros períodos [ABC-001 §faq-2]." in PROMPT_SISTEMA
+    )
+    assert "porque trocam o termo negado pelo trecho" in PROMPT_SISTEMA
+    assert "a frase de ausência começa repetindo as palavras da negação do trecho" in PROMPT_SISTEMA
+    assert "porque omite o termo negado pelo trecho" in PROMPT_SISTEMA
+
+
+def test_regra_9_so_vale_quando_um_trecho_real_nega_o_assunto() -> None:
+    assert (
+        'Este exemplo só se aplica quando um trecho real contém uma frase como "este documento '
+        'não estabelece" ou "não são definidos" sobre o assunto da pergunta.' in PROMPT_SISTEMA
+    )
+    assert "Nos demais casos, não use frase de ausência" in PROMPT_SISTEMA
+    assert "ou aplique a regra 2" in PROMPT_SISTEMA
 
 
 def test_campo_evidencia_inclui_os_casos_da_regra_7() -> None:

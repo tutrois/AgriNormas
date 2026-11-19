@@ -48,8 +48,8 @@ CONFIGURACAO_OFFLINE = {
     "OPENAI_API_KEY": "chave-ficticia-do-modo-offline",
     "MODELO_EMBEDDING": MODELO_GRAVADO,
     "MODELO_GERACAO": "gpt-4o-mini",
-    "LIMIAR_SIMILARIDADE": "0.60",
-    "TOP_K": "4",
+    "LIMIAR_SIMILARIDADE": "0.40",
+    "TOP_K": "8",
     "TAMANHO_MAXIMO_CHUNK": "1200",
     "PASTA_DOCUMENTOS": str(PASTA_BASE),
 }
@@ -137,27 +137,33 @@ PERGUNTAS_EXIGEM_LIMITE_POR_VIAGEM = tuple(
 # Casos conhecidos que falham hoje, com o bug registrado no relatório da HIST-022. A marca é
 # `xfail(strict=True)`: ela só registra a falha conhecida, não altera o critério. Quando o bug
 # for corrigido, a suíte acusa (XPASS), e a marca deve sair.
-# A busca usa só cosseno: um trecho entra apenas se a similaridade chegar ao limiar 0,60.
-# Offline o TOP_K é fixo em 4, então a pergunta 4 também perde RH-PRO-003 §3 por corte de top-k
-# (com TOP_K 6, como no `.env`, §3 entra). Na integração só resta o §4 abaixo do limiar.
-BUGS_OFFLINE: dict[int, str] = {
-    2: "BUG-2: FIN-POL-001 §4 tem cosseno 0,568, abaixo do limiar 0,60, e não é recuperada",
-    3: "BUG-1: FIN-POL-001 §4 tem cosseno 0,41, abaixo do limiar 0,60, e não é recuperada",
-    4: "BUG-3: RH-PRO-003 §4 tem cosseno 0,44, abaixo do limiar 0,60; §3 cai pelo TOP_K 4 offline",
+# Offline a busca usa o piso de cosseno 0,40 e TOP_K 8 (ADR-011): entram as 8 seções mais
+# próximas, desde que acima do piso. Medido com `vetores_gravados.npz`, BUG-2 deixou de falhar
+# (FIN-POL-001 §4 = 0,568, 5ª posição; §5 = 0,618, 3ª). Continuam fora do top 8, embora acima do
+# piso, FIN-POL-001 §4 na pergunta 3 (19ª) e RH-PRO-003 §4 na pergunta 4 (22ª).
+# As marcas valem por teste: o mesmo bug pode derrubar a citação da seção sem derrubar o teste
+# de dois documentos.
+BUGS_OFFLINE_FONTES: dict[int, str] = {
+    3: "BUG-1: FIN-POL-001 §4 tem cosseno 0,41 e fica na 19ª posição, fora das 8 mais próximas",
+    4: "BUG-3: RH-PRO-003 §4 tem cosseno 0,44 e fica na 22ª posição, fora das 8 mais próximas",
 }
+# Pergunta 3 passa no teste de dois documentos, mas por FIN-POL-001 §3.1 (0,485, 6ª) e §7
+# (0,459, 8ª), não pela §4 esperada. A citação da §4 é cobrada pelo teste de fontes acima.
+BUGS_OFFLINE_DOIS_DOCUMENTOS: dict[int, str] = {}
+# Na integração valem o mesmo piso 0,40 e TOP_K 8, com o prompt 1.9. Medido em 6 execuções
+# (2026-11-19): as três marcas abaixo deram XFAIL nas 6.
 BUGS_INTEGRACAO: dict[int, str] = {
-    2: "BUG-2: FIN-POL-001 §4 tem cosseno 0,568, abaixo do limiar 0,60, e não é recuperada",
-    3: "BUG-1: FIN-POL-001 §4 tem cosseno 0,41, abaixo do limiar 0,60, e não é recuperada",
-    4: "BUG-3: RH-PRO-003 §4 tem cosseno 0,44, abaixo do limiar 0,60, e não é recuperada",
-}
-# Limitação conhecida (decisão do usuário): o critério de "mensal" fica como está e a falha da
-# pergunta 7 é aceita. Só este teste recebe a marca; a pergunta 6 segue sem xfail.
-BUGS_INTEGRACAO_LIMITE_MENSAL: dict[int, str] = {
-    7: (
-        "BUG-4: a pergunta 7 não diz 'mensal' (2 de 2 execuções com prompt 1.7); "
-        "a resposta generaliza além do trecho FRO-POL-002 §faq-5"
+    2: (
+        "BUG-2: FIN-POL-001 §4 e §5 são recuperadas (5ª e 3ª), mas o modelo cita §4 e §7 e "
+        "não cita §5 (6 de 6 execuções com prompt 1.9)"
     ),
+    3: "BUG-1: FIN-POL-001 §4 tem cosseno 0,41 e fica na 19ª posição, fora das 8 mais próximas",
+    4: "BUG-3: RH-PRO-003 §4 tem cosseno 0,44 e fica na 22ª posição, fora das 8 mais próximas",
 }
+# BUG-4 (pergunta 7 sem 'mensal') saiu: deu XPASS em 3 de 3 execuções com prompt 1.9 e passou
+# nas 3 seguintes. O dicionário fica vazio para registrar uma eventual regressão sem mudar a
+# parametrização do teste.
+BUGS_INTEGRACAO_LIMITE_MENSAL: dict[int, str] = {}
 
 
 def _pergunta(numero: int) -> Pergunta:
@@ -317,7 +323,7 @@ def test_verificacao_de_valor_detecta_numero_fora_das_citacoes() -> None:
 # Offline
 
 
-@pytest.mark.parametrize("pergunta", _casos(PERGUNTAS_COM_FONTES, BUGS_OFFLINE))
+@pytest.mark.parametrize("pergunta", _casos(PERGUNTAS_COM_FONTES, BUGS_OFFLINE_FONTES))
 def test_offline_resposta_cita_todas_as_fontes_esperadas(
     pergunta: Pergunta, respostas_offline: dict[int, Resposta]
 ) -> None:
@@ -350,7 +356,9 @@ def test_offline_limite_de_combustivel_cita_o_faq_5_de_fro_pol_002(
     assert _cita_secao_exata(respostas_offline[pergunta.numero], pergunta.fontes[0])
 
 
-@pytest.mark.parametrize("pergunta", _casos(PERGUNTAS_COM_MAIS_DE_UM_DOCUMENTO, BUGS_OFFLINE))
+@pytest.mark.parametrize(
+    "pergunta", _casos(PERGUNTAS_COM_MAIS_DE_UM_DOCUMENTO, BUGS_OFFLINE_DOIS_DOCUMENTOS)
+)
 def test_offline_pergunta_com_dois_documentos_cita_os_dois(
     pergunta: Pergunta, respostas_offline: dict[int, Resposta]
 ) -> None:
