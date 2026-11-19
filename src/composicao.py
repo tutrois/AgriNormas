@@ -12,11 +12,18 @@ repete a pergunta uma única vez.
 A listagem dos documentos da base (`listar_documentos_da_base` e `listar_documentos_do_ambiente`)
 serve ao menu da interface: devolve só código, título e versão de cada PDF, sem a chave da API.
 Um PDF ilegível não derruba a lista; entra com o nome do arquivo como título.
+
+A leitura de um documento (`ler_documento_da_base` e `ler_documento_do_ambiente`) devolve as
+mesmas seções que a busca usa, na ordem do documento, para a tela "Base de conhecimento". O
+nome do arquivo vem da interface e não é confiável: só vale o de um PDF listado diretamente na
+pasta, e o caminho lido é sempre o devolvido pela listagem, nunca montado a partir do nome.
+Qualquer falha devolve `None`, sem expor `ErroDocumento`.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,9 +35,13 @@ from busca.indexacao import construir_indice, construir_indice_com_cache, entrad
 from busca.indice_memoria import MENSAGEM_DIMENSAO_DIFERENTE_DO_INDICE
 from busca.provedor_openai import ProvedorEmbeddingOpenAI
 from config import (
+    PADRAO_TAMANHO_MAXIMO_CHUNK,
     RAIZ_PROJETO,
+    TAMANHO_CHUNK_MAXIMO,
+    TAMANHO_CHUNK_MINIMO,
     Configuracao,
     _ambiente_do_processo,
+    _inteiro_entre,
     _pasta_documentos,
     carregar_configuracao,
 )
@@ -65,6 +76,31 @@ class DocumentoDaBase:
     """Título extraído do PDF ou, se ilegível, o nome do arquivo sem extensão."""
     versao: str
     """Versão, ex.: `1.0`. Vazia se o PDF não pôde ser lido."""
+
+
+@dataclass(frozen=True)
+class SecaoDoDocumento:
+    """Seção de um documento, pronta para exibição."""
+
+    numero: str
+    """Número da seção, ex.: `6`, `3.1` ou `faq-5`."""
+    titulo: str
+    """Título da seção; para FAQ, a pergunta."""
+    texto: str
+    """Corpo da seção, sem as linhas de título que o chunker inclui no começo."""
+    tipo: str
+    """Tipo da seção no chunker, ex.: `normal`, `excecao` ou `faq`."""
+
+
+@dataclass(frozen=True)
+class ConteudoDoDocumento:
+    """Documento da base com o conteúdo dividido em seções."""
+
+    arquivo: str
+    codigo: str
+    titulo: str
+    versao: str
+    secoes: tuple[SecaoDoDocumento, ...]
 
 
 def montar_assistente(configuracao: Configuracao) -> AssistenteRAG:
@@ -133,6 +169,96 @@ def listar_documentos_da_base(pasta: Path) -> tuple[DocumentoDaBase, ...]:
     """
     leitor = LeitorPdf()
     return tuple(_documento_da_base(caminho, leitor) for caminho in sorted(pasta.glob("*.pdf")))
+
+
+def ler_documento_do_ambiente(arquivo: str) -> ConteudoDoDocumento | None:
+    """Lê um documento da pasta configurada em `PASTA_DOCUMENTOS`, sem exigir a chave da API.
+
+    Usa o mesmo ambiente e a mesma resolução de pasta e de tamanho de chunk de
+    `carregar_configuracao`. Veja `ler_documento_da_base` para as regras de `arquivo`.
+    """
+    valores = _ambiente_do_processo(None)
+    return ler_documento_da_base(
+        _pasta_documentos(valores),
+        arquivo,
+        tamanho_maximo=_inteiro_entre(
+            valores,
+            "TAMANHO_MAXIMO_CHUNK",
+            PADRAO_TAMANHO_MAXIMO_CHUNK,
+            TAMANHO_CHUNK_MINIMO,
+            TAMANHO_CHUNK_MAXIMO,
+        ),
+    )
+
+
+def ler_documento_da_base(
+    pasta: Path, arquivo: str, *, tamanho_maximo: int = PADRAO_TAMANHO_MAXIMO_CHUNK
+) -> ConteudoDoDocumento | None:
+    """Devolve o conteúdo do PDF `arquivo` da pasta, dividido nas mesmas seções da busca.
+
+    `arquivo` não é confiável: só é aceito se for exatamente o nome de um `*.pdf` listado
+    diretamente em `pasta`. O caminho lido é o do glob, nunca montado a partir de `arquivo`.
+    Nome inválido, PDF ilegível ou sem seções devolve `None`; o log não cita conteúdo nem caminho.
+    """
+    if not isinstance(arquivo, str):
+        return None
+    caminho = next((c for c in pasta.glob("*.pdf") if c.name == arquivo), None)
+    if caminho is None:
+        return None
+    try:
+        paginas = LeitorPdf().ler(caminho)
+        metadados = extrair_metadados(paginas[0].texto, caminho)
+        secoes = ChunkerPorSecao(tamanho_maximo=tamanho_maximo).dividir(
+            metadados.codigo, limpar_paginas(paginas)
+        )
+    except ErroDocumento, IndexError:
+        _LOG.warning("Não foi possível ler o conteúdo de um documento da base.")
+        return None
+    if not secoes:
+        _LOG.warning("Um documento da base não gerou seções.")
+        return None
+    return ConteudoDoDocumento(
+        arquivo=caminho.name,
+        codigo=metadados.codigo,
+        titulo=metadados.titulo,
+        versao=metadados.versao,
+        secoes=tuple(_secao_do_documento(secao) for secao in secoes),
+    )
+
+
+_CABECALHO_NUMERADO = re.compile(r"^\d+(?:\.\d+)*\.?\s+(?P<resto>\S.*)$")
+
+
+def _secao_do_documento(secao: Secao) -> SecaoDoDocumento:
+    return SecaoDoDocumento(
+        numero=secao.numero,
+        titulo=secao.titulo,
+        texto=_corpo_sem_titulo(secao),
+        tipo=secao.tipo,
+    )
+
+
+def _corpo_sem_titulo(secao: Secao) -> str:
+    """Remove do começo do texto as linhas de cabeçalho que o chunker inclui.
+
+    O chunker prefixa o texto com o cabeçalho da seção pai (`5. Comprovantes...`) e, em
+    subseções e FAQ, com o próprio título (`3.1 Transporte`, ou a pergunta). Remove-se até a
+    linha que repete o título (com ou sem numeração), desde que as anteriores sejam cabeçalhos
+    numerados. Sem essa linha, o texto fica intacto.
+    """
+    linhas = secao.texto.split("\n")
+    for indice, linha in enumerate(linhas[:3]):
+        if _repete_titulo(linha, secao.titulo):
+            return "\n".join(linhas[indice + 1 :]).strip()
+        if not _CABECALHO_NUMERADO.match(linha):
+            break
+    return secao.texto
+
+
+def _repete_titulo(linha: str, titulo: str) -> bool:
+    casamento = _CABECALHO_NUMERADO.match(linha)
+    candidato = casamento.group("resto") if casamento else linha
+    return candidato.strip() == titulo.strip()
 
 
 def _documento_da_base(caminho: Path, leitor: LeitorDocumento) -> DocumentoDaBase:
