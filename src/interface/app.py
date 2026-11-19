@@ -24,10 +24,7 @@ Estados da tela:
 
 from __future__ import annotations
 
-import logging
 import sys
-import traceback
-from collections.abc import Callable
 from pathlib import Path
 from typing import Final, Literal
 
@@ -40,10 +37,10 @@ if str(_PASTA_SRC) not in sys.path:
 import streamlit as st  # noqa: E402
 from streamlit.delta_generator import DeltaGenerator  # noqa: E402
 
-from composicao import (  # noqa: E402
-    ler_documento_do_ambiente,
-    listar_documentos_do_ambiente,
-    montar_assistente_do_ambiente,
+from interface.dados import (  # noqa: E402
+    conteudo_ou_none,
+    documentos_ou_none,
+    obter_assistente,
 )
 from interface.estilo import CSS_PAGINA  # noqa: E402
 from interface.marcacao import (  # noqa: E402
@@ -64,11 +61,9 @@ from interface.marcacao import (  # noqa: E402
     titulo_legivel,
     titulo_para_leitor_html,
 )
+from interface.tratamento import escapar_markdown, executar_com_tratamento  # noqa: E402
 from nucleo.assistente import AssistenteRAG  # noqa: E402
-from nucleo.erros import ConfiguracaoInvalida, ErroAssistente, PerguntaInvalida  # noqa: E402
-from nucleo.modelos import ConteudoDoDocumento, DocumentoDaBase, Fonte, Resposta  # noqa: E402  # noqa: E402
-
-_LOG: Final[logging.Logger] = logging.getLogger(__name__)
+from nucleo.modelos import DocumentoDaBase, Fonte, Resposta  # noqa: E402
 
 TITULO_PAGINA: Final[str] = "AgriNormas"
 TITULO_BOAS_VINDAS: Final[str] = "Consulte as normas da empresa"
@@ -139,130 +134,13 @@ ROTULO_FONTES: Final[str] = "Ver fontes desta resposta"
 ROTULO_CAMPO_CODIGO: Final[str] = "Código do documento"
 ROTULO_CAMPO_SECAO: Final[str] = "Seção"
 ROTULO_CAMPO_TITULO: Final[str] = "Título"
-MENSAGEM_CONFIGURACAO: Final[str] = (
-    "Não foi possível iniciar o assistente por causa da configuração. "
-    "Confira o arquivo .env na pasta do projeto e atualize a página."
-)
-MENSAGEM_SERVICO: Final[str] = (
-    "Não foi possível responder agora. O serviço pode estar indisponível. "
-    "Tente novamente em instantes."
-)
-MENSAGEM_INESPERADA: Final[str] = (
-    "Ocorreu um erro inesperado. Tente novamente. Se o problema continuar, avise a equipe."
-)
-
-_CARACTERES_MARKDOWN: Final[dict[int, str]] = str.maketrans(
-    {caractere: f"\\{caractere}" for caractere in "\\`*_{}[]()#+-.!|<>~$"}
-)
-
-
-@st.cache_resource(show_spinner=False)
-def _assistente() -> AssistenteRAG:
-    """Monta o assistente uma vez por processo. Erros não ficam em cache e são tentados de novo."""
-    return montar_assistente_do_ambiente()
-
-
-@st.cache_data(show_spinner=False)
-def _documentos_da_base() -> tuple[DocumentoDaBase, ...]:
-    """Lê a lista de documentos uma vez por processo. Erros não ficam em cache."""
-    return listar_documentos_do_ambiente()
-
-
-class _DocumentoIndisponivel(Exception):
-    """Interna: faz o `st.cache_data` não guardar o resultado vazio (exceção não entra no cache)."""
-
-
-@st.cache_data(show_spinner=False)
-def _conteudo_do_documento(arquivo: str) -> ConteudoDoDocumento:
-    """Lê um documento uma vez por arquivo. Indisponível (None) e erros não ficam em cache."""
-    conteudo = ler_documento_do_ambiente(arquivo)
-    if conteudo is None:
-        raise _DocumentoIndisponivel
-    return conteudo
-
-
-def _conteudo_ou_none(arquivo: str) -> ConteudoDoDocumento | None:
-    """Conteúdo para a tela. Qualquer falha vira None e não derruba a página."""
-    try:
-        return _conteudo_do_documento(arquivo)
-    except _DocumentoIndisponivel:
-        return None
-    except Exception as erro:
-        # Só a classe vai ao log: a mensagem pode conter caminho ou segredo.
-        _LOG.warning("Não foi possível ler o documento: %s", type(erro).__name__)
-        return None
-
-
-def _documentos_ou_none() -> tuple[DocumentoDaBase, ...] | None:
-    """Lista da base para as telas da base. Qualquer falha vira None e não derruba a página."""
-    try:
-        return _documentos_da_base()
-    except Exception as erro:
-        # Só a classe vai ao log: a mensagem pode conter caminho ou segredo.
-        _LOG.warning("Não foi possível listar os documentos: %s", type(erro).__name__)
-        return None
-
-
-def _escapar_markdown(texto: str) -> str:
-    """Impede que texto vindo do núcleo ou dos PDFs (títulos, códigos) vire formatação ou link.
-
-    Usado só onde a página ainda usa Markdown: avisos (`st.warning`) e títulos de fonte.
-    Limitação conhecida: o escape não impede o autolink de URL e e-mail do GFM (`http://`,
-    `www.`, `fulano@...`). Ressalva aberta na M-59 do backlog. Não é tratada aqui.
-    """
-    return texto.translate(_CARACTERES_MARKDOWN)
-
-
-def _mostrar_erro(erro: ErroAssistente) -> None:
-    """Traduz uma exceção esperada do domínio em aviso ou erro para o usuário."""
-    if isinstance(erro, PerguntaInvalida):
-        # A mensagem vem do núcleo e descreve a regra (vazia ou longa demais).
-        st.warning(_escapar_markdown(str(erro)))
-    elif isinstance(erro, ConfiguracaoInvalida):
-        st.error(MENSAGEM_CONFIGURACAO)
-    else:
-        st.error(MENSAGEM_SERVICO)
-
-
-def _local_da_falha(erro: BaseException) -> str:
-    """Arquivo, linha e função de cada quadro do traceback, sem a mensagem da exceção."""
-    quadros = traceback.extract_tb(erro.__traceback__)
-    if not quadros:
-        return "local desconhecido"
-    return " | ".join(f"{quadro.filename}:{quadro.lineno} em {quadro.name}" for quadro in quadros)
-
-
-def _mostrar_erro_inesperado(erro: BaseException) -> None:
-    """Registra no log a classe da exceção e o local da falha, e mostra só a mensagem genérica.
-
-    A mensagem da exceção não é gravada: ela pode conter segredos (ex.: chave da API).
-    Pelo mesmo motivo não há traceback no log, porque ele exibe a mensagem.
-    """
-    _LOG.error(
-        "Erro inesperado na tela de perguntas: %s. Local: %s",
-        type(erro).__name__,
-        _local_da_falha(erro),
-    )
-    st.error(MENSAGEM_INESPERADA)
-
-
-def _executar_com_tratamento[T](acao: Callable[[], T], mensagem_carregando: str) -> T | None:
-    """Executa `acao` com indicador de progresso. Erros viram aviso ou erro e devolvem None."""
-    try:
-        with st.spinner(mensagem_carregando):
-            return acao()
-    except ErroAssistente as erro:
-        _mostrar_erro(erro)
-    except Exception as erro:
-        _mostrar_erro_inesperado(erro)
-    return None
 
 
 def _formatar_fonte(fonte: Fonte) -> str:
     campos = (
-        f"**{ROTULO_CAMPO_CODIGO}:** {_escapar_markdown(fonte.documento)}",
-        f"**{ROTULO_CAMPO_SECAO}:** {_escapar_markdown(fonte.secao)}",
-        f"**{ROTULO_CAMPO_TITULO}:** {_escapar_markdown(fonte.titulo)}",
+        f"**{ROTULO_CAMPO_CODIGO}:** {escapar_markdown(fonte.documento)}",
+        f"**{ROTULO_CAMPO_SECAO}:** {escapar_markdown(fonte.secao)}",
+        f"**{ROTULO_CAMPO_TITULO}:** {escapar_markdown(fonte.titulo)}",
     )
     return "- " + " · ".join(campos)
 
@@ -313,7 +191,7 @@ def _mostrar_sugestoes() -> None:
 def _mostrar_cartoes() -> None:
     with st.container(key="sugestoes", horizontal=True, wrap=False, gap="small"):
         for indice, (titulo, descricao, pergunta_pronta) in enumerate(SUGESTOES):
-            rotulo = f"**{_escapar_markdown(titulo)}**  \n{_escapar_markdown(descricao)}"
+            rotulo = f"**{escapar_markdown(titulo)}**  \n{escapar_markdown(descricao)}"
             st.button(
                 rotulo,
                 key=f"sugestao_{indice}",
@@ -327,7 +205,7 @@ def _responder_e_guardar(
     assistente: AssistenteRAG, pergunta: str, turnos: list[tuple[str, Resposta]]
 ) -> None:
     """Responde a pergunta e guarda o par na conversa. Erros não entram na conversa."""
-    resposta = _executar_com_tratamento(lambda: assistente.responder(pergunta), MENSAGEM_BUSCANDO)
+    resposta = executar_com_tratamento(lambda: assistente.responder(pergunta), MENSAGEM_BUSCANDO)
     if resposta is not None:
         turnos.append((pergunta, resposta))
 
@@ -415,7 +293,7 @@ def _mostrar_recentes(turnos: list[tuple[str, Resposta]]) -> None:
             with st.container(key="recentes_lista"):
                 primeiro = max(len(turnos) - LIMITE_RECENTES, 0)
                 for indice in range(len(turnos) - 1, primeiro - 1, -1):
-                    pergunta = _escapar_markdown(turnos[indice][0])
+                    pergunta = escapar_markdown(turnos[indice][0])
                     st.button(
                         pergunta,
                         key=f"recente_{indice}",
@@ -446,15 +324,15 @@ def _botoes_de_volta(*, com_lista: bool) -> None:
 def _rotulo_do_cartao(documento: DocumentoDaBase) -> str:
     """Cartão da lista: título, código · versão, arquivo e número de seções (se o PDF abrir)."""
     titulo = titulo_legivel(documento.titulo) or documento.arquivo
-    linhas = [f"**{_escapar_markdown(titulo)}**"]
+    linhas = [f"**{escapar_markdown(titulo)}**"]
     meta = meta_do_documento(documento.codigo, documento.versao)
     if meta:
-        linhas.append(_escapar_markdown(meta))
+        linhas.append(escapar_markdown(meta))
     if documento.arquivo:
-        linhas.append(_escapar_markdown(documento.arquivo))
-    conteudo = _conteudo_ou_none(documento.arquivo)
+        linhas.append(escapar_markdown(documento.arquivo))
+    conteudo = conteudo_ou_none(documento.arquivo)
     if conteudo is not None:
-        linhas.append(_escapar_markdown(contagem_de_secoes(len(conteudo.secoes))))
+        linhas.append(escapar_markdown(contagem_de_secoes(len(conteudo.secoes))))
     return QUEBRA_DE_LINHA.join(linhas)
 
 
@@ -486,7 +364,7 @@ def _mostrar_documento(documentos: tuple[DocumentoDaBase, ...] | None, arquivo: 
     """Tela de um documento. Só abre arquivos que estão na lista da base."""
     _botoes_de_volta(com_lista=True)
     permitido = arquivo is not None and any(d.arquivo == arquivo for d in documentos or ())
-    conteudo = _conteudo_ou_none(arquivo) if permitido and arquivo is not None else None
+    conteudo = conteudo_ou_none(arquivo) if permitido and arquivo is not None else None
     if conteudo is None:
         st.html(aviso_base_html(TEXTO_DOCUMENTO_ERRO))
         return
@@ -538,7 +416,7 @@ def main() -> None:
     st.set_page_config(page_title=TITULO_PAGINA)
     st.html(CSS_PAGINA)
     st.html(titulo_para_leitor_html(TITULO_PAGINA_LEITOR))
-    assistente = _executar_com_tratamento(_assistente, MENSAGEM_PREPARANDO)
+    assistente = executar_com_tratamento(obter_assistente, MENSAGEM_PREPARANDO)
     if assistente is None:
         # Sem assistente não há o que perguntar: o erro já foi mostrado acima.
         return
@@ -550,7 +428,7 @@ def main() -> None:
     tela = _tela_atual()
     aberto: str | None = st.session_state.get(CHAVE_DOCUMENTO)
     em_chat = tela == TELA_CHAT
-    documentos = _documentos_ou_none()
+    documentos = documentos_ou_none()
     # A conversa é preenchida depois do envio, porque o campo e os cartões só são lidos depois
     # de desenhados. Por isso o bloco é criado antes.
     # `autoscroll` faz a área rolar até a última mensagem a cada envio. Com altura fixa, o
