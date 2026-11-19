@@ -20,7 +20,7 @@ from nucleo.erros import ConfiguracaoInvalida, ErroBusca, ErroReescrita
 from nucleo.modelos import Secao, Trecho, Vetor
 
 PERGUNTA = "qual o limite de combustível"
-CHAVE_FALSA = "sk-chave-falsa-para-teste"
+CHAVE_FALSA = "sk-teste-chave-falsa-0123456789"
 LIMIAR = 0.6
 TOP_K = 3
 
