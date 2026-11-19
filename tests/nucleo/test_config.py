@@ -88,8 +88,8 @@ def test_usa_valores_padrao_quando_somente_a_chave_e_informada() -> None:
     assert configuracao.timeout_segundos == PADRAO_TIMEOUT_SEGUNDOS
 
 
-def test_padrao_de_reformulacoes_e_tres_como_no_adr_010() -> None:
-    assert PADRAO_NUMERO_REFORMULACOES == 3
+def test_padrao_de_reformulacoes_e_zero_como_no_adr_010() -> None:
+    assert PADRAO_NUMERO_REFORMULACOES == 0
 
 
 def test_pasta_relativa_e_resolvida_a_partir_da_raiz_do_projeto() -> None:

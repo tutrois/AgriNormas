@@ -22,6 +22,9 @@ CONFIGURACAO: Configuracao = carregar_configuracao(ambiente={"OPENAI_API_KEY": "
 CONFIGURACAO_SEM_REFORMULACAO: Configuracao = carregar_configuracao(
     ambiente={"OPENAI_API_KEY": "sk-teste-000", "NUMERO_REFORMULACOES": "0"}
 )
+CONFIGURACAO_COM_REFORMULACAO: Configuracao = carregar_configuracao(
+    ambiente={"OPENAI_API_KEY": "sk-teste-000", "NUMERO_REFORMULACOES": "3"}
+)
 MODELO = CONFIGURACAO.modelo_embedding
 SECOES = (
     Secao(documento="FIN-POL-001", numero="1", titulo="Prazo", texto="Entrega em cinco dias."),
@@ -303,7 +306,7 @@ def test_com_zero_formulacoes_nao_cria_o_reescritor_nem_envolve_a_busca(
 def test_com_formulacoes_a_montagem_cria_o_reescritor_com_a_configuracao_do_gerador(
     monkeypatch: pytest.MonkeyPatch, fabrica_reescritor: FabricaReescritorFalso
 ) -> None:
-    _montar(monkeypatch, ProvedorPorDimensao([3]))
+    _montar(monkeypatch, ProvedorPorDimensao([3]), CONFIGURACAO_COM_REFORMULACAO)
 
     assert fabrica_reescritor.argumentos == [
         {
@@ -320,7 +323,7 @@ def test_com_formulacoes_a_busca_consulta_a_original_e_depois_cada_formulacao(
 ) -> None:
     fabrica_reescritor.reescritor = ReescritorFalso((FORMULACAO,))
     provedor = ProvedorPorDimensao([3])
-    assistente = _montar(monkeypatch, provedor)
+    assistente = _montar(monkeypatch, provedor, CONFIGURACAO_COM_REFORMULACAO)
 
     assistente.responder(PERGUNTA)
 
@@ -333,7 +336,7 @@ def test_o_gerador_recebe_a_pergunta_original_mesmo_com_formulacoes(
     fabrica_reescritor: FabricaReescritorFalso,
 ) -> None:
     fabrica_reescritor.reescritor = ReescritorFalso((FORMULACAO,))
-    assistente = _montar(monkeypatch, ProvedorPorDimensao([3]))
+    assistente = _montar(monkeypatch, ProvedorPorDimensao([3]), CONFIGURACAO_COM_REFORMULACAO)
 
     assistente.responder(PERGUNTA)
 
@@ -361,10 +364,12 @@ def test_reconstrucao_do_cache_mantem_a_busca_com_formulacoes(
     monkeypatch: pytest.MonkeyPatch, fabrica_reescritor: FabricaReescritorFalso
 ) -> None:
     fabrica_reescritor.reescritor = ReescritorFalso((FORMULACAO,))
-    _montar(monkeypatch, ProvedorPorDimensao([3])).responder(PERGUNTA)
+    _montar(monkeypatch, ProvedorPorDimensao([3]), CONFIGURACAO_COM_REFORMULACAO).responder(
+        PERGUNTA
+    )
     fabrica_reescritor.reescritor = ReescritorFalso((FORMULACAO,))
     provedor = ProvedorPorDimensao([5])
-    assistente = _montar(monkeypatch, provedor)
+    assistente = _montar(monkeypatch, provedor, CONFIGURACAO_COM_REFORMULACAO)
 
     resposta = assistente.responder(PERGUNTA)
 

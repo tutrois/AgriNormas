@@ -120,7 +120,7 @@ Os demais valores já têm padrão no `.env.example`, e um valor vazio usa o pad
 | `MODELO_EMBEDDING` | `text-embedding-3-small` | Modelo dos embeddings |
 | `LIMIAR_SIMILARIDADE` | `0.40` | Piso de similaridade. Abaixo dele, o trecho é descartado. Não é o critério final de evidência (ver Limitações conhecidas) |
 | `TOP_K` | `10` | Número máximo de trechos recuperados por pergunta. Aceita de 1 a 50 |
-| `NUMERO_REFORMULACOES` | `3` | Formulações alternativas da pergunta usadas na busca. Aceita de 0 a 5. Com `0`, a pergunta não é reescrita |
+| `NUMERO_REFORMULACOES` | `0` | Formulações alternativas da pergunta usadas na busca. Aceita de 0 a 5. Com `0`, a pergunta não é reescrita e a busca usa só a pergunta original |
 | `PASTA_DOCUMENTOS` | `base_conhecimento` | Pasta com os PDFs lidos |
 | `TAMANHO_MAXIMO_CHUNK` | `1200` | Tamanho máximo de uma seção indexada. Aceita de 100 a 10000 |
 | `TIMEOUT_SEGUNDOS` | `30` | Tempo limite das chamadas à API |
