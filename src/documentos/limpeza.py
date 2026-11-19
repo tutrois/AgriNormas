@@ -71,33 +71,14 @@ def normalizar_espacos(texto: str) -> str:
     return "\n".join(linha for linha in linhas if linha)
 
 
-def unir_quebras_de_linha(texto: str) -> str:
-    """Une as linhas quebradas pelo layout; títulos e perguntas ficam em linha própria.
-
-    Limites da regra em `LARGURA_LINHA_CHEIA`.
-    """
-    linhas = texto.splitlines()
-    return "\n".join(
-        _SEPARADOR_DE_BLOCO.join(linhas[inicio:fim]) for inicio, fim in _agrupar_linhas(linhas)
-    )
-
-
-def limpar_texto(texto: str) -> str:
-    """Aplica as etapas de limpeza, na ordem, a um texto já concatenado."""
-    sem_cabecalho = remover_cabecalho(texto)
-    sem_rodape = remover_rodape(sem_cabecalho)
-    return unir_quebras_de_linha(normalizar_espacos(sem_rodape))
-
-
 def limpar_paginas(paginas: Sequence[Pagina]) -> tuple[tuple[int, str], ...]:
     """Parágrafos limpos do documento, na ordem, cada um com o número da página em que começa.
 
     Devolve pares `(numero_da_pagina, texto)`, um por parágrafo; um parágrafo que atravessa
     páginas recebe a página em que começa. Devolve `()` se nenhuma página tiver texto.
 
-    A limpeza é feita por página, mas a união das quebras corre sobre as linhas de todas
-    elas, para o parágrafo poder continuar na página seguinte. Juntar os pares com `"\\n"`
-    reproduz o resultado de `limpar_texto`.
+    A união das quebras de linha segue `LARGURA_LINHA_CHEIA` e corre sobre as linhas de todas
+    as páginas, para o parágrafo poder continuar na página seguinte.
     """
     linhas_com_pagina = [
         (pagina.numero, linha) for pagina in paginas for linha in _linhas_limpas(pagina.texto)

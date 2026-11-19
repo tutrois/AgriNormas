@@ -7,10 +7,17 @@ from typing import Final
 
 import pytest
 
-from documentos.metadados import MetadadosDocumento, extrair_metadados, ler_metadados
+from documentos.leitor_pdf import LeitorPdf
+from documentos.metadados import MetadadosDocumento, extrair_metadados
 from nucleo.erros import ErroDocumento
 
 PASTA_BASE = Path(__file__).resolve().parents[2] / "base_conhecimento"
+
+
+def _ler_metadados(caminho: Path) -> MetadadosDocumento:
+    """Metadados da primeira página do PDF, lido como em produção."""
+    return extrair_metadados(LeitorPdf().ler(caminho)[0].texto, caminho)
+
 
 VERSAO_ESPERADA = "1.0"
 DATA_ESPERADA = "Novembro/2026"
@@ -69,7 +76,7 @@ CAMINHO_FICTICIO = Path("ficticio.pdf")
 def test_pdf_real_devolve_codigo_titulo_versao_e_data(
     nome: str, esperado: MetadadosDocumento
 ) -> None:
-    assert ler_metadados(PASTA_BASE / nome) == esperado
+    assert _ler_metadados(PASTA_BASE / nome) == esperado
 
 
 def test_extrai_metadados_do_texto_sintetico_no_layout_real() -> None:
@@ -246,7 +253,7 @@ PSI_004_ESPERADO = MetadadosDocumento(
 
 
 def test_pdf_psi_004_le_codigo_versao_titulo_em_duas_linhas_e_data_de_vigencia() -> None:
-    assert ler_metadados(PASTA_BASE / PDF_PSI_004) == PSI_004_ESPERADO
+    assert _ler_metadados(PASTA_BASE / PDF_PSI_004) == PSI_004_ESPERADO
 
 
 def test_identificacao_em_linha_unica_e_aceita() -> None:

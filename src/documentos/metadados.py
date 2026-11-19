@@ -18,7 +18,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from documentos.leitor_pdf import LeitorPdf
 from nucleo.erros import ErroDocumento
 
 ROTULO_TABELA: Final[str] = "Identificação"
@@ -122,13 +121,6 @@ def extrair_metadados(texto_primeira_pagina: str, caminho: Path) -> MetadadosDoc
         versao=_casar(_RE_VERSAO, tabela, "versao", caminho),
         data_emissao=_casar(_RE_DATA_EMISSAO, tabela, "data", caminho),
     )
-
-
-def ler_metadados(caminho: Path) -> MetadadosDocumento:
-    """Lê o PDF e extrai os metadados da primeira página; erros de leitura vêm do `LeitorPdf`."""
-    # `LeitorPdf.ler` sempre devolve ao menos uma página (ou levanta erro): o índice 0 é seguro.
-    primeira_pagina = LeitorPdf().ler(caminho)[0]
-    return extrair_metadados(primeira_pagina.texto, caminho)
 
 
 def _separar_tabela(texto: str) -> tuple[str, str] | None:

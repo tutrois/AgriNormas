@@ -13,11 +13,9 @@ from documentos.limpeza import (
     LARGURA_LINHA_CHEIA,
     PONTUACAO_FIM_DE_FRASE,
     limpar_paginas,
-    limpar_texto,
     normalizar_espacos,
     remover_cabecalho,
     remover_rodape,
-    unir_quebras_de_linha,
 )
 from nucleo.modelos import Pagina
 
@@ -78,6 +76,11 @@ def _texto_limpo(nome: str) -> str:
 
 def _tokens(texto: str) -> list[str]:
     return texto.split()
+
+
+def _unir(texto: str) -> str:
+    """Une as quebras de linha do layout, como em produção: uma página só."""
+    return _juntar(limpar_paginas((Pagina(numero=1, texto=texto),)))
 
 
 @pytest.mark.parametrize(
@@ -146,33 +149,33 @@ def test_une_linha_cheia_com_a_seguinte() -> None:
     cheia = "x" * LARGURA_LINHA_CHEIA
     texto = f"{cheia}\ncontinua aqui."
 
-    assert unir_quebras_de_linha(texto) == f"{cheia} continua aqui."
+    assert _unir(texto) == f"{cheia} continua aqui."
 
 
 def test_linha_curta_termina_o_paragrafo() -> None:
     texto = "Frase curta.\nNovo parágrafo."
 
-    assert unir_quebras_de_linha(texto) == "Frase curta.\nNovo parágrafo."
+    assert _unir(texto) == "Frase curta.\nNovo parágrafo."
 
 
 def test_titulo_numerado_fica_em_linha_propria_mesmo_apos_linha_cheia() -> None:
     cheia = "x" * LARGURA_LINHA_CHEIA
     texto = f"{cheia}\n3.1 Transporte\nCorpo da seção."
 
-    assert unir_quebras_de_linha(texto) == f"{cheia}\n3.1 Transporte\nCorpo da seção."
+    assert _unir(texto) == f"{cheia}\n3.1 Transporte\nCorpo da seção."
 
 
 def test_titulo_numerado_nao_se_junta_ao_corpo_que_vem_depois() -> None:
     texto = "6.1 Exemplo de contagem do prazo\nSe uma viagem terminar na sexta-feira."
 
-    assert unir_quebras_de_linha(texto).split("\n")[0] == "6.1 Exemplo de contagem do prazo"
+    assert _unir(texto).split("\n")[0] == "6.1 Exemplo de contagem do prazo"
 
 
 def test_pergunta_de_faq_fica_em_linha_propria() -> None:
     cheia = "x" * LARGURA_LINHA_CHEIA
     texto = f"{cheia}\nPosso enviar depois de 5 dias úteis?\nSim, com justificativa."
 
-    assert unir_quebras_de_linha(texto).split("\n") == [
+    assert _unir(texto).split("\n") == [
         f"{cheia}",
         "Posso enviar depois de 5 dias úteis?",
         "Sim, com justificativa.",
@@ -183,7 +186,7 @@ def test_linha_que_comeca_com_numero_nao_se_une_ao_paragrafo() -> None:
     cheia = "x" * LARGURA_LINHA_CHEIA
     texto = f"{cheia}\n5 (cinco) dias úteis após o encerramento."
 
-    assert unir_quebras_de_linha(texto) == texto
+    assert _unir(texto) == texto
 
 
 @pytest.mark.parametrize("fim_de_frase", PONTUACAO_FIM_DE_FRASE)
@@ -191,28 +194,28 @@ def test_linha_cheia_terminada_em_pontuacao_de_fim_de_frase_nao_se_une(fim_de_fr
     anterior = "x" * (LARGURA_LINHA_CHEIA - 1) + fim_de_frase
     texto = f"{anterior}\ncontinua aqui."
 
-    assert unir_quebras_de_linha(texto) == texto
+    assert _unir(texto) == texto
 
 
 def test_linha_cheia_sem_pontuacao_une_com_proxima_que_comeca_em_minuscula() -> None:
     cheia = "x" * LARGURA_LINHA_CHEIA
     texto = f"{cheia}\nfinal do parágrafo."
 
-    assert unir_quebras_de_linha(texto) == f"{cheia} final do parágrafo."
+    assert _unir(texto) == f"{cheia} final do parágrafo."
 
 
 def test_linha_cheia_nao_se_une_com_proxima_que_comeca_em_maiuscula() -> None:
     cheia = "x" * LARGURA_LINHA_CHEIA
     texto = f"{cheia}\nNova frase começa aqui."
 
-    assert unir_quebras_de_linha(texto) == texto
+    assert _unir(texto) == texto
 
 
 def test_frases_de_96_caracteres_e_fim_de_frase_real_ficam_em_linhas_separadas() -> None:
     assert len(FRASE_96_TERMINADA_EM_PONTO) == 96
     texto = f"{FRASE_96_TERMINADA_EM_PONTO}\nA chefia responde em até dois dias úteis."
 
-    assert unir_quebras_de_linha(texto).split("\n") == [
+    assert _unir(texto).split("\n") == [
         FRASE_96_TERMINADA_EM_PONTO,
         "A chefia responde em até dois dias úteis.",
     ]
@@ -222,12 +225,11 @@ def test_quebra_de_meio_de_frase_com_96_caracteres_se_une_com_minuscula() -> Non
     assert len(FRASE_96_QUEBRADA_NO_MEIO) == 96
     texto = f"{FRASE_96_QUEBRADA_NO_MEIO}\na conferência do gestor."
 
-    assert unir_quebras_de_linha(texto) == f"{FRASE_96_QUEBRADA_NO_MEIO} a conferência do gestor."
+    assert _unir(texto) == f"{FRASE_96_QUEBRADA_NO_MEIO} a conferência do gestor."
 
 
 def test_texto_vazio_devolve_vazio_em_todas_as_etapas() -> None:
-    assert limpar_texto("") == ""
-    assert unir_quebras_de_linha("") == ""
+    assert _unir("") == ""
     assert limpar_paginas(()) == ()
 
 
@@ -235,12 +237,6 @@ def test_pagina_so_com_cabecalho_e_rodape_devolve_vazio() -> None:
     paginas = (Pagina(numero=1, texto=f"{CABECALHO_BRUTO}\nPágina 1\n"),)
 
     assert limpar_paginas(paginas) == ()
-
-
-def test_limpeza_e_deterministica_em_texto_sintetico() -> None:
-    texto = f"{CABECALHO_BRUTO}\nPágina 1\n1. Objetivo\nCorpo do texto."
-
-    assert limpar_texto(texto) == limpar_texto(texto)
 
 
 def test_paragrafo_continua_na_pagina_seguinte() -> None:
@@ -301,14 +297,6 @@ def test_limpar_paginas_e_determinista() -> None:
     )
 
     assert limpar_paginas(paginas) == limpar_paginas(paginas)
-
-
-@pytest.mark.parametrize("nome", PDFS_REAIS)
-def test_juncao_dos_pares_reproduz_o_texto_do_documento_concatenado(nome: str) -> None:
-    paginas = _ler_paginas(nome)
-    concatenado = "\n".join(pagina.texto for pagina in paginas)
-
-    assert _juntar(limpar_paginas(paginas)) == limpar_texto(concatenado)
 
 
 def test_veiculos_tem_um_par_por_paragrafo_com_paginas_em_ordem_cobrindo_as_quatro() -> None:

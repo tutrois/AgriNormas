@@ -15,7 +15,7 @@ import pytest
 from documentos.chunker_secao import ChunkerPorSecao
 from documentos.leitor_pdf import LeitorPdf
 from documentos.limpeza import limpar_paginas
-from documentos.metadados import ler_metadados
+from documentos.metadados import extrair_metadados
 from documentos.regras_chunking import TAMANHO_MAXIMO_CHUNK
 from nucleo.contratos import Chunker
 from nucleo.erros import ConfiguracaoInvalida
@@ -114,7 +114,7 @@ def _pares(nome: str) -> tuple[tuple[int, str], ...]:
 
 @cache
 def _codigo(nome: str) -> str:
-    return ler_metadados(PASTA_BASE / nome).codigo
+    return extrair_metadados(LeitorPdf().ler(PASTA_BASE / nome)[0].texto, PASTA_BASE / nome).codigo
 
 
 @cache
