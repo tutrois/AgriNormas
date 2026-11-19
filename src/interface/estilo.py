@@ -8,9 +8,10 @@ e os ícones aparecem como quadrados. Por isso esta tela não usa ícone de font
 - as marcas (barra lateral e avatares) são texto curto ou formas feitas em CSS;
 - a seta do botão de envio é ícone nativo do Streamlit, em `app.py`.
 
-Layout (referência aprovada pelo coordenador): barra lateral escura de 200 px com marca,
-"Nova conversa", "Base de conhecimento" e "Recentes", nessa ordem. A área clara tem cabeçalho
-discreto, saudação centralizada, o campo de pergunta em cartão branco e três cartões de sugestão.
+Layout (spec. "Navegação da barra lateral"): barra lateral escura de 200 px com marca, "Nova
+conversa", "Perguntar", "Base de conhecimento", divisor e "Perguntas recentes", nessa ordem.
+A área clara tem cabeçalho discreto, saudação centralizada, o campo de pergunta em cartão branco
+e três cartões de sugestão.
 
 A barra tem 200 px só enquanto está aberta (`data-collapsed="false"`). Quando recolhida, o
 Streamlit cuida da largura, e a regra fixa não a impede de sumir.
@@ -37,6 +38,9 @@ COR_CAMPO_ESCURO: Final[str] = "#1f1f22"
 COR_CONTORNO_TRILHO: Final[str] = "#6b6b73"
 # Fundo do controle da barra com o cursor em cima: texto branco continua acima de 4,5:1.
 COR_CAMPO_ESCURO_SOBREVOO: Final[str] = "#2a2a2e"
+# Sobrevoo de destino inativo na barra: um tom acima do preto. Texto #d6d6da fica em 12:1.
+COR_SOBREVOO_TRILHO_SUAVE: Final[str] = "#1a1a1d"
+COR_DIVISOR_TRILHO: Final[str] = "#2a2a2e"
 LARGURA_BARRA: Final[str] = "200px"
 # Altura da barra de topo do Streamlit (`stAppToolbar`, fixa e acima do conteúdo, z-index alto).
 ALTURA_BARRA_TOPO: Final[str] = "60px"
@@ -58,6 +62,8 @@ _VARIAVEIS_CSS: Final[str] = f"""
   --agri-campo-escuro: {COR_CAMPO_ESCURO};
   --agri-contorno-trilho: {COR_CONTORNO_TRILHO};
   --agri-campo-sobrevoo: {COR_CAMPO_ESCURO_SOBREVOO};
+  --agri-sobrevoo-suave: {COR_SOBREVOO_TRILHO_SUAVE};
+  --agri-divisor: {COR_DIVISOR_TRILHO};
   --agri-barra: {LARGURA_BARRA};
   --agri-barra-topo: {ALTURA_BARRA_TOPO};
 }}
@@ -217,13 +223,20 @@ _REGRAS_CSS: Final[str] = """
 [data-testid="stExpandSidebarButton"] span {
   color: var(--agri-tinta) !important;
 }
+/* Alvo de toque de 40 x 40 px (o padrão do Streamlit mede 28 px). */
+[data-testid="stExpandSidebarButton"] {
+  width: 40px !important;
+  height: 40px !important;
+  min-width: 40px;
+  min-height: 40px;
+}
 /* Marca: a mesma altura do botão de recolher (40 px). O recuo à direita evita o botão. */
 .agri-marca-bloco {
   display: flex;
   align-items: center;
   gap: 8px;
   height: 40px;
-  margin: 0 0 12px;
+  margin: 0 0 16px;
   padding: 0 48px 0 0;
   font-size: 16px;
   font-weight: 500;
@@ -245,101 +258,193 @@ _REGRAS_CSS: Final[str] = """
   line-height: 1;
   white-space: nowrap;
 }
-/* Ação "Nova conversa": borda sutil (contraste 3:1 sobre o preto), destaque no sobrevoo e no foco.
-   O foco usa contorno lima de 2 px, que não depende só de cor. Ocupa a largura da barra. */
-.agri-nova {
-  display: flex;
-  align-items: center;
-  box-sizing: border-box;
-  width: 100%;
-  height: 36px;
-  padding: 0 10px;
-  border-radius: 8px;
-  background: var(--agri-campo-escuro);
-  border: 1px solid var(--agri-contorno-trilho);
-  color: #ffffff;
-  font-size: 14px;
-  text-decoration: none;
+/* Barra de navegação (spec. "Navegação da barra lateral", seções 3 a 5).
+   Itens de 40 px de altura e 176 px de largura (a barra tem 200 px, com 12 px de recuo de cada
+   lado). Dentro do item: texto a 24 px da borda da barra; com ícone, o ícone fica a 24 px e o
+   texto a 52 px (18 px de ícone e 10 px de espaço). Espaço entre itens: 4 px. */
+[data-testid="stSidebarContent"] {
+  align-items: stretch !important;
+  /* Sem a reserva de 10 px de cada lado que o Streamlit põe para a rolagem: a barra mede 200 px e
+     o conteúdo começa a 12 px da borda, como na especificação. */
+  scrollbar-gutter: auto !important;
 }
-.agri-nova:hover {
-  background: var(--agri-campo-sobrevoo);
-  border-color: var(--agri-destaque);
+[data-testid="stSidebarUserContent"] {
+  width: 100% !important;
+  max-width: none !important;
 }
-.agri-nova:focus-visible {
-  outline: 2px solid var(--agri-destaque);
-  outline-offset: 2px;
+[data-testid="stSidebarUserContent"] [data-testid="stVerticalBlock"] {
+  gap: 0 !important;
 }
-/* Rótulo "Recentes": cinza pequeno (#8a8a92 sobre #0d0d0d passa de 4,5:1). */
-.agri-lista-rotulo {
-  margin: 0 0 6px;
-  padding: 0 10px;
-  font-size: 13px;
-  line-height: 1.4;
-  color: var(--agri-texto-trilho-suave);
-}
-/* Seções da barra lateral ("Base de conhecimento" e "Recentes"). Cada item é um botão nativo do
-   Streamlit com cara de item de lista, com o mesmo recuo de "Nova conversa" (10 px), para o texto
-   alinhar com o rótulo "Recentes". O ativo (`primary`) tem fundo mais claro e texto branco.
-   O foco usa contorno lima de 2 px, que não depende só de cor. */
-.st-key-menu_base,
-.st-key-lista_conversas {
+[data-testid="stSidebarUserContent"] .st-key-navegacao,
+[data-testid="stSidebarUserContent"] .st-key-recentes_lista {
   gap: 4px !important;
-  margin-top: 20px;
 }
-.st-key-menu_base [data-testid="stButton"],
-.st-key-lista_conversas [data-testid="stButton"] {
+.st-key-acoes {
+  margin-bottom: 16px;
+}
+.st-key-navegacao [data-testid="stButton"],
+.st-key-acoes [data-testid="stButton"],
+.st-key-recentes_lista [data-testid="stButton"] {
   width: 100%;
   min-width: 0;
 }
-.st-key-menu_base [data-testid="stButton"] button,
-.st-key-lista_conversas [data-testid="stButton"] button {
+.st-key-navegacao [data-testid="stButton"] button,
+.st-key-acoes [data-testid="stButton"] button,
+.st-key-recentes_lista [data-testid="stButton"] button {
   box-sizing: border-box;
-  display: block;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
   width: 100%;
-  min-height: 0;
-  height: auto;
-  padding: 7px 10px;
+  height: 40px;
+  min-height: 40px;
+  margin: 0;
+  padding: 0 12px;
   border: none;
   border-radius: 8px;
   background: transparent;
   color: var(--agri-texto-trilho);
   text-align: left;
 }
-.st-key-menu_base [data-testid="stButton"] button > div,
-.st-key-lista_conversas [data-testid="stButton"] button > div {
-  display: block;
+.st-key-navegacao [data-testid="stButton"] button > div,
+.st-key-acoes [data-testid="stButton"] button > div,
+.st-key-recentes_lista [data-testid="stButton"] button > div {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
   width: 100%;
+  min-width: 0;
   margin: 0;
   padding: 0;
-  gap: 0;
-  text-align: left;
 }
-.st-key-menu_base [data-testid="stButton"] button p,
-.st-key-lista_conversas [data-testid="stButton"] button p {
+.st-key-navegacao [data-testid="stButton"] button p,
+.st-key-acoes [data-testid="stButton"] button p,
+.st-key-recentes_lista [data-testid="stButton"] button p {
   margin: 0;
+  min-width: 0;
   font-size: 14px;
-  line-height: 1.4;
+  font-weight: 500;
+  line-height: 20px;
   text-align: left;
   color: var(--agri-texto-trilho);
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.st-key-menu_base [data-testid="stButton"] button:hover,
-.st-key-lista_conversas [data-testid="stButton"] button:hover {
-  background: var(--agri-campo-escuro);
+/* Ícone e texto ficam numa linha interna do Streamlit (button > div > span), com gap de 8 px e
+   centralizada. Aqui ela recebe o gap de 10 px da especificação, alinhada à esquerda, e o wrapper
+   do ícone tem 18 px, para o texto começar a 52 px da borda da barra. Depende da marcação interna
+   do Streamlit 1.67: se ela mudar, a medição no navegador (seção 8) precisa ser refeita. */
+.st-key-navegacao [data-testid="stButton"] button > div > span,
+.st-key-acoes [data-testid="stButton"] button > div > span {
+  gap: 10px;
+  justify-content: flex-start;
+  width: 100%;
+  min-width: 0;
 }
-.st-key-menu_base [data-testid="stButton"] button:focus-visible,
-.st-key-lista_conversas [data-testid="stButton"] button:focus-visible {
-  outline: 2px solid var(--agri-destaque);
-  outline-offset: 2px;
+.st-key-navegacao [data-testid="stButton"] button > div > span > span:first-child,
+.st-key-acoes [data-testid="stButton"] button > div > span > span:first-child {
+  flex: none;
+  width: 18px;
+  min-width: 18px;
 }
-.st-key-menu_base [data-testid="stBaseButton-primary"],
-.st-key-lista_conversas [data-testid="stBaseButton-primary"] {
+/* Destinos: o texto pode quebrar em duas linhas dentro dos 40 px ("Base de conhecimento" em
+   14 px tem 134 px, e com o ícone sobram 124 px). Não é cortado com reticências. */
+.st-key-navegacao [data-testid="stButton"] button p {
+  white-space: normal;
+  line-height: 16px;
+}
+/* Ícone de 18 px, na mesma cor do texto. */
+.st-key-navegacao [data-testid="stIconMaterial"],
+.st-key-acoes [data-testid="stIconMaterial"] {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  font-size: 18px;
+  line-height: 18px;
+  color: var(--agri-texto-trilho);
+}
+/* Pergunta recente: texto normal, uma linha, com reticências por CSS. */
+.st-key-recentes_lista [data-testid="stButton"] button p {
+  font-weight: 400;
+}
+/* Sobrevoo de item inativo: um tom acima do fundo da barra. */
+.st-key-navegacao [data-testid="stButton"] button:hover,
+.st-key-recentes_lista [data-testid="stButton"] button:hover {
+  background: var(--agri-sobrevoo-suave);
+}
+/* Destino ativo (`primary`): fundo mais claro, texto branco em 600 e barra lima de 3 px à
+   esquerda. As três marcas juntas: não dependem só de cor. */
+.st-key-navegacao [data-testid="stBaseButton-primary"] {
   background: var(--agri-campo-escuro) !important;
   color: #ffffff;
 }
-.st-key-menu_base [data-testid="stBaseButton-primary"] p,
-.st-key-lista_conversas [data-testid="stBaseButton-primary"] p {
+.st-key-navegacao [data-testid="stBaseButton-primary"]:hover {
+  background: var(--agri-campo-sobrevoo) !important;
+}
+.st-key-navegacao [data-testid="stButton"] button[data-testid="stBaseButton-primary"] p,
+.st-key-navegacao [data-testid="stButton"] button[data-testid="stBaseButton-primary"]
+  [data-testid="stIconMaterial"] {
   color: #ffffff;
+  font-weight: 600;
+}
+.st-key-navegacao [data-testid="stBaseButton-primary"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  width: 3px;
+  height: 20px;
+  border-radius: 2px;
+  background: var(--agri-destaque);
+}
+/* "Nova conversa": a ação é o único botão com borda (1 px, sobre o preto fica em 3,7:1). */
+.st-key-acoes [data-testid="stButton"] button {
+  background: var(--agri-campo-escuro) !important;
+  border: 1px solid var(--agri-contorno-trilho);
+  color: #ffffff;
+}
+.st-key-acoes [data-testid="stButton"] button p,
+.st-key-acoes [data-testid="stButton"] button [data-testid="stIconMaterial"] {
+  color: #ffffff;
+}
+.st-key-acoes [data-testid="stButton"] button:hover {
+  background: var(--agri-campo-sobrevoo) !important;
+}
+/* Foco por teclado: contorno lima de 2 px, com 2 px de recuo. Não depende só de cor. */
+.st-key-navegacao [data-testid="stButton"] button:focus-visible,
+.st-key-acoes [data-testid="stButton"] button:focus-visible,
+.st-key-recentes_lista [data-testid="stButton"] button:focus-visible {
+  outline: 2px solid var(--agri-destaque);
+  outline-offset: 2px;
+}
+/* Divisor entre a navegação e o histórico: 1 px, 16 px de cada lado. */
+.agri-divisor {
+  height: 1px;
+  margin: 16px 0;
+  background: var(--agri-divisor);
+}
+/* Rótulo "Perguntas recentes": 13 px, peso 500, cinza (#8a8a92 sobre #0d0d0d passa de 4,5:1).
+   Mesmo recuo de 12 px dos itens: o texto começa a 24 px da borda da barra. */
+.agri-lista-rotulo {
+  height: 20px;
+  margin: 0 0 4px;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  color: var(--agri-texto-trilho-suave);
+  white-space: nowrap;
+}
+/* A lista de recentes rola sozinha. O resto da barra (marca, ações e destinos) fica sempre visível.
+   A altura é o espaço que sobra abaixo do divisor e do rótulo. */
+.st-key-recentes_lista {
+  max-height: max(120px, calc(100vh - 420px));
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 2px 0;
 }
 /* A ajuda tem a mesma largura da caixa de pergunta, centralizada abaixo dela. */
 .st-key-ajuda {
@@ -424,19 +529,6 @@ _REGRAS_CSS: Final[str] = """
   line-height: 1.4;
   text-align: center;
   color: var(--agri-secundaria);
-}
-
-/* Cabeçalho discreto da conversa: título à esquerda */
-.agri-topo {
-  padding: 8px 0 8px;
-  color: var(--agri-tinta);
-}
-.agri-topo h1 {
-  margin: 0;
-  font-size: 16px;
-  line-height: 1.3;
-  font-weight: 500;
-  color: var(--agri-tinta);
 }
 
 /* Estado inicial: saudação centralizada, como na referência */
@@ -1061,9 +1153,6 @@ _REGRAS_CSS: Final[str] = """
     border-radius: 0;
     padding: 0;
     background: var(--agri-fundo);
-  }
-  .agri-topo {
-    padding-left: 40px;
   }
   .st-key-sugestoes {
     flex-wrap: wrap !important;

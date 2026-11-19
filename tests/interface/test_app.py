@@ -72,10 +72,10 @@ PADRAO_SELO = re.compile(r'<span class="agri-selo-sem-evidencia">([^<]*)</span>'
 
 
 def _cria_link_ou_imagem(bloco: str) -> bool:
-    """Link ou imagem criados pela página. O link fixo "Nova conversa" não conta."""
+    """Link ou imagem criados pela página. A página não tem link fixo: a barra usa botões."""
     if "<img" in bloco:
         return True
-    return "<a " in bloco and 'class="agri-nova"' not in bloco
+    return "<a " in bloco
 
 
 class AssistenteFalso:
@@ -295,9 +295,9 @@ def test_abre_pagina_com_campo_de_pergunta_e_botao(montagens: Montagens) -> None
     assert [campo.label for campo in at.text_input] == [ROTULO_PERGUNTA]
     # O botão de envio vem primeiro; depois, um botão por cartão de sugestão.
     assert [botao.label for botao in at.button][0] == TEXTO_BOTAO
-    # Um botão de envio, três cartões (Reembolso, Veículos e Férias) e o item "Base de
-    # conhecimento" da barra. Os documentos não aparecem na barra.
-    assert len(at.button) == 5
+    # Um botão de envio, três cartões (Reembolso, Veículos e Férias) e os três botões da barra:
+    # "Nova conversa", "Perguntar" e "Base de conhecimento".
+    assert len(at.button) == 7
 
 
 def test_cartao_de_sugestao_envia_pergunta_pronta_e_some_depois(montagens: Montagens) -> None:
@@ -390,7 +390,7 @@ def test_texto_da_resposta_nao_vira_link_nem_imagem(montagens: Montagens) -> Non
         "Veja [x](http://exemplo.invalido) e a imagem ![](http://exemplo.invalido/i.png)."
         "</div>"
     ]
-    # Nenhum elemento de link ou imagem é criado pela resposta. O único link é "Nova conversa".
+    # Nenhum elemento de link ou imagem é criado pela resposta.
     assert not any(_cria_link_ou_imagem(bloco) for bloco in _valores(at.html))
     # Os blocos Markdown da página são a descrição e a fonte, nunca o texto da resposta.
     blocos_markdown = _valores(at.markdown)
@@ -562,11 +562,16 @@ def test_avatares_sao_decorativos_com_aria_hidden_e_iniciais_em_texto(
     assert "agri-icone" not in _html_da_pagina(at)
 
 
-def test_barra_lateral_mostra_marca_e_nova_conversa(montagens: Montagens) -> None:
+def test_barra_lateral_mostra_marca_sem_link_e_nova_conversa_como_botao(
+    montagens: Montagens,
+) -> None:
     at = _abrir()
 
     assert '<span class="agri-marca" aria-hidden="true">RH</span>' in _html_da_pagina(at)
-    assert '<a class="agri-nova" href="./">Nova conversa</a>' in _html_da_pagina(at)
+    # A marca não é link e "Nova conversa" é botão do Streamlit, não um `<a href>` que recarrega.
+    assert "<a " not in _html_da_barra(at)
+    assert 'href="./"' not in _html_da_pagina(at)
+    assert at.button(key="nova_conversa").label == "Nova conversa"
 
 
 def test_pagina_nao_mostra_titulo_no_topo(montagens: Montagens) -> None:
@@ -773,9 +778,16 @@ def test_pagina_nunca_exibe_a_chave_da_api_em_nenhum_elemento(montagens: Montage
     assert "sk-" not in _conteudo_da_pagina(at)
 
 
-def _menu(at: AppTest) -> list[str]:
-    """Chaves dos botões do menu "Base de conhecimento" na barra lateral."""
-    return [botao.key for botao in at.sidebar.button if str(botao.key).startswith("menu_")]  # type: ignore[misc]
+NAV_CHAVES = ["nova_conversa", "destino_perguntar", "destino_base"]
+
+
+def _botoes_da_barra(at: AppTest) -> list[str]:
+    """Chaves dos botões da barra, na ordem em que aparecem (sem as perguntas recentes)."""
+    return [str(b.key) for b in at.sidebar.button if not str(b.key).startswith("recente_")]
+
+
+def _recentes(at: AppTest) -> list[str]:
+    return [str(b.key) for b in at.sidebar.button if str(b.key).startswith("recente_")]
 
 
 def _html_da_barra(at: AppTest) -> str:
@@ -789,32 +801,50 @@ def _clicar(at: AppTest, chave: str) -> AppTest:
     return at
 
 
-def test_barra_tem_so_o_item_base_sem_documentos_nem_contagem(montagens: Montagens) -> None:
+def test_barra_tem_acao_e_dois_destinos_sem_recentes_nem_documentos(montagens: Montagens) -> None:
     at = _abrir()
 
     assert not at.exception
-    assert _menu(at) == ["menu_base_titulo"]
-    assert at.button(key="menu_base_titulo").label == "Base de conhecimento"
-    assert at.button(key="menu_base_titulo").proto.type == "secondary"
-    # Sem conversa, "Recentes" não aparece: nem o rótulo nem a lista.
-    assert "Recentes" not in _html_da_barra(at)
-    assert not any(str(b.key).startswith("recente_") for b in at.button)
+    assert _botoes_da_barra(at) == NAV_CHAVES
+    assert at.button(key="nova_conversa").label == "Nova conversa"
+    assert at.button(key="destino_perguntar").label == "Perguntar"
+    assert at.button(key="destino_base").label == "Base de conhecimento"
+    # Sem conversa, "Perguntas recentes" não aparece: nem o rótulo nem a lista.
+    assert "Perguntas recentes" not in _html_da_barra(at)
+    assert _recentes(at) == []
     # A contagem e os documentos ficam só na tela da base.
     assert "documentos" not in _html_da_barra(at)
     assert not any(str(b.key).startswith("menu_documento_") for b in at.button)
 
 
-def test_recentes_fica_depois_da_base_na_barra(montagens: Montagens) -> None:
+def test_icones_da_acao_e_dos_destinos_sao_os_do_material(montagens: Montagens) -> None:
+    at = _abrir()
+
+    assert at.button(key="nova_conversa").proto.icon == ":material/add:"
+    assert at.button(key="destino_perguntar").proto.icon == ":material/chat:"
+    assert at.button(key="destino_base").proto.icon == ":material/menu_book:"
+
+
+def test_rotulos_da_barra_nao_tem_sufixo_aberto(montagens: Montagens) -> None:
+    at = _clicar(_abrir(), "destino_base")
+
+    rotulos = [str(b.label) for b in at.sidebar.button]
+    assert rotulos == ["Nova conversa", "Perguntar", "Base de conhecimento"]
+    assert not any("aberto" in rotulo for rotulo in rotulos)
+
+
+def test_recentes_fica_depois_da_base_com_divisor_e_rotulo(montagens: Montagens) -> None:
     at = _perguntar(_abrir(), "Qual é o prazo de entrega?")
 
-    assert "Recentes" in _html_da_barra(at)
-    assert [b.key for b in at.sidebar.button] == ["menu_base_titulo", "recente_0"]
+    assert "Perguntas recentes" in _html_da_barra(at)
+    assert "agri-divisor" in _html_da_barra(at)
+    assert [str(b.key) for b in at.sidebar.button] == [*NAV_CHAVES, "recente_0"]
 
 
-def test_clicar_no_titulo_abre_a_lista_no_lugar_do_chat(montagens: Montagens) -> None:
+def test_clicar_em_base_abre_a_lista_no_lugar_do_chat(montagens: Montagens) -> None:
     at = _perguntar(_abrir(), "Qual é o prazo de entrega?")
 
-    _clicar(at, "menu_base_titulo")
+    _clicar(at, "destino_base")
 
     html_pagina = _html_da_pagina(at)
     assert "Base de conhecimento" in html_pagina
@@ -832,66 +862,114 @@ def test_clicar_no_titulo_abre_a_lista_no_lugar_do_chat(montagens: Montagens) ->
     assert "FIN\\-POL\\-001 · v1\\.0" in cartao
     assert "Politica\\_Reembolso\\.pdf" in cartao
     assert "3 seções" in cartao
-    # Item ativo marcado na barra: destaque (primary) e rótulo com o estado.
-    assert at.button(key="menu_base_titulo").proto.type == "primary"
-    assert at.button(key="menu_base_titulo").label.endswith("\\(aberto\\)")
-    # Na tela da base, "Recentes" não tem destaque.
+    # Destino ativo: só "Base de conhecimento", com destaque (primary).
+    assert at.button(key="destino_base").proto.type == "primary"
+    assert at.button(key="destino_perguntar").proto.type == "secondary"
     assert at.button(key="recente_0").proto.type == "secondary"
 
 
-def test_ir_para_a_base_e_voltar_preserva_a_conversa(montagens: Montagens) -> None:
+def test_perguntar_volta_ao_chat_e_preserva_a_conversa_e_o_rascunho(
+    montagens: Montagens,
+) -> None:
     at = _abrir()
     _perguntar(at, "Primeira pergunta?")
     _perguntar(at, "Segunda pergunta?")
     antes = _respostas_em_html(at)
 
-    _clicar(at, "menu_base_titulo")
+    _clicar(at, "destino_base")
     _clicar(at, "cartao_1")
-    _clicar(at, "voltar_chat")
+    _clicar(at, "destino_perguntar")
 
     assert _respostas_em_html(at) == antes
     assert _autores(at) == [ROTULO_USUARIO, ROTULO_ASSISTENTE] * 2
     assert montagens.assistente.perguntas == ["Primeira pergunta?", "Segunda pergunta?"]
     assert montagens.chamadas == 1
     assert at.text_input[0].label == ROTULO_PERGUNTA
+    assert at.button(key="destino_perguntar").proto.type == "primary"
+    assert at.button(key="destino_base").proto.type == "secondary"
+
+
+def test_destino_ativo_e_sempre_um_so(montagens: Montagens) -> None:
+    at = _abrir()
+    assert at.button(key="destino_perguntar").proto.type == "primary"
+    assert at.button(key="destino_base").proto.type == "secondary"
+
+    _clicar(at, "destino_base")
+    _clicar(at, "cartao_0")
+
+    assert at.button(key="destino_perguntar").proto.type == "secondary"
+    assert at.button(key="destino_base").proto.type == "primary"
 
 
 def test_recente_volta_ao_chat_sem_perder_a_conversa(montagens: Montagens) -> None:
     at = _perguntar(_abrir(), "Qual é o prazo de entrega?")
-    _clicar(at, "menu_base_titulo")
+    _clicar(at, "destino_base")
 
     _clicar(at, "recente_0")
 
     assert len(_respostas_em_html(at)) == 1
     assert _autores(at) == [ROTULO_USUARIO, ROTULO_ASSISTENTE]
-    assert at.button(key="recente_0").proto.type == "primary"
+    # Nenhum recente fica destacado; o destino ativo é "Perguntar".
+    assert at.button(key="recente_0").proto.type == "secondary"
+    assert at.button(key="destino_perguntar").proto.type == "primary"
 
 
-def test_recentes_viram_botoes_escapados_e_cortados(montagens: Montagens) -> None:
+def test_recentes_mostram_pergunta_completa_escapada_com_dica(montagens: Montagens) -> None:
     at = _abrir()
     _perguntar(at, "primeira")
     _perguntar(at, "<b>" + "x" * 80)
 
-    rotulos = [at.button(key="recente_1").label, at.button(key="recente_0").label]
-
-    assert rotulos[0].startswith("\\<b\\>")
-    assert rotulos[0].endswith("…")
-    assert rotulos[1] == "primeira"
-    assert at.button(key="recente_1").proto.type == "primary"
+    rotulo = at.button(key="recente_1").label
+    assert rotulo == "\\<b\\>" + "x" * 80
+    assert "…" not in rotulo
+    assert at.button(key="recente_1").help == rotulo
+    assert at.button(key="recente_0").label == "primeira"
+    assert at.button(key="recente_1").proto.type == "secondary"
     assert at.button(key="recente_0").proto.type == "secondary"
 
 
-def test_nova_conversa_continua_sendo_o_link_que_recarrega(montagens: Montagens) -> None:
-    html_barra = _html_da_barra(_abrir())
+def test_recentes_mostram_so_as_dez_ultimas_e_a_conversa_guarda_todas(
+    montagens: Montagens,
+) -> None:
+    at = _abrir()
+    for numero in range(12):
+        _perguntar(at, f"pergunta {numero}")
 
-    assert '<a class="agri-nova" href="./">Nova conversa</a>' in html_barra
-    assert "?" not in html_barra.split('href="')[1].split('"')[0]
+    assert _recentes(at) == [f"recente_{i}" for i in range(11, 1, -1)]
+    assert len(_respostas_em_html(at)) == 12
+    assert montagens.assistente.perguntas[-1] == "pergunta 11"
+
+
+def test_nova_conversa_zera_a_conversa_o_campo_e_volta_ao_chat(montagens: Montagens) -> None:
+    at = _perguntar(_abrir(), "Primeira?")
+    _clicar(at, "destino_base")
+    at.text_input[0].input("rascunho")
+
+    _clicar(at, "nova_conversa")
+
+    assert TITULO_BOAS_VINDAS in _html_da_pagina(at)
+    assert _respostas_em_html(at) == []
+    assert _recentes(at) == []
+    assert "Perguntas recentes" not in _html_da_barra(at)
+    assert at.text_input[0].value == ""
+    assert any(str(b.key).startswith("sugestao_") for b in at.button)
+    assert at.button(key="destino_perguntar").proto.type == "primary"
+    assert at.button(key="destino_base").proto.type == "secondary"
+    # Sem recarga: o assistente não é montado de novo.
+    assert montagens.chamadas == 1
+
+
+def test_nova_conversa_e_botao_sem_destaque_e_sem_link(montagens: Montagens) -> None:
+    at = _abrir()
+
+    assert at.button(key="nova_conversa").proto.type == "secondary"
+    assert "<a " not in _html_da_barra(at)
 
 
 def test_clicar_num_documento_mostra_cabecalho_e_secoes_em_ordem(montagens: Montagens) -> None:
     at = _abrir()
 
-    at = _clicar(_clicar(_abrir(), "menu_base_titulo"), "cartao_1")
+    at = _clicar(_clicar(_abrir(), "destino_base"), "cartao_1")
 
     html_pagina = _html_da_pagina(at)
     assert "<h2>Política de veículos</h2>" in html_pagina
@@ -905,15 +983,15 @@ def test_clicar_num_documento_mostra_cabecalho_e_secoes_em_ordem(montagens: Mont
     assert "Voltar à lista" in [b.label for b in at.button]
     assert "Voltar ao chat" in [b.label for b in at.button]
     # A barra continua com a seção "Base de conhecimento" destacada, sem itens por documento.
-    assert at.button(key="menu_base_titulo").proto.type == "primary"
-    assert at.button(key="menu_base_titulo").label.endswith("\\(aberto\\)")
-    assert _menu(at) == ["menu_base_titulo"]
+    assert at.button(key="destino_base").proto.type == "primary"
+    assert "(aberto)" not in _html_da_barra(at)
+    assert _botoes_da_barra(at) == NAV_CHAVES
     assert _autores(at) == []
 
 
 def test_voltar_a_lista_e_do_documento_e_da_lista_ao_chat(montagens: Montagens) -> None:
     at = _abrir()
-    _clicar(at, "menu_base_titulo")
+    _clicar(at, "destino_base")
     _clicar(at, "cartao_0")
 
     _clicar(at, "voltar_lista")
@@ -928,7 +1006,7 @@ def test_voltar_a_lista_e_do_documento_e_da_lista_ao_chat(montagens: Montagens) 
 def test_a_entrada_continua_montada_na_tela_da_base_para_nao_perder_o_texto(
     montagens: Montagens,
 ) -> None:
-    at = _clicar(_abrir(), "menu_base_titulo")
+    at = _clicar(_abrir(), "destino_base")
 
     assert [campo.label for campo in at.text_input] == [ROTULO_PERGUNTA]
     assert "tela_base" in _css_da_pagina(at)
@@ -945,15 +1023,13 @@ def test_texto_hostil_do_documento_e_escapado_na_visualizacao(
         (composicao.SecaoDoDocumento(hostil, hostil, hostil + "\n\n" + hostil, "faq"),),
     )
 
-    at = _clicar(_clicar(_abrir(), "menu_base_titulo"), "cartao_0")
+    at = _clicar(_clicar(_abrir(), "destino_base"), "cartao_0")
 
     html_pagina = _html_da_pagina(at)
     assert "<img" not in html_pagina
     assert "<script>x" not in html_pagina
     assert "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;" in html_pagina
-    assert "<a " not in re.sub(r'<a href="#agri-sec-\d+">', "", html_pagina).replace(
-        '<a class="agri-nova" href="./">', ""
-    )
+    assert "<a " not in re.sub(r'<a href="#agri-sec-\d+">', "", html_pagina)
 
 
 @pytest.mark.parametrize("falha", ["none", "erro"])
@@ -965,7 +1041,7 @@ def test_documento_indisponivel_mostra_mensagem_fixa_sem_detalhes(
     else:
         leitura.erro = RuntimeError(f"/segredo/{CHAVE_DE_TESTE}.pdf Traceback")
 
-    at = _clicar(_clicar(_abrir(), "menu_base_titulo"), "cartao_0")
+    at = _clicar(_clicar(_abrir(), "destino_base"), "cartao_0")
 
     texto = _conteudo_da_pagina(at)
     assert TEXTO_DOCUMENTO_ERRO in _html_da_pagina(at)
@@ -981,7 +1057,7 @@ def test_documento_indisponivel_nao_fica_em_cache(
 ) -> None:
     arquivo = "Politica_Reembolso.pdf"
     leitura.conteudos[arquivo] = None
-    at = _clicar(_clicar(_abrir(), "menu_base_titulo"), "cartao_0")
+    at = _clicar(_clicar(_abrir(), "destino_base"), "cartao_0")
     assert TEXTO_DOCUMENTO_ERRO in _html_da_pagina(at)
 
     leitura.conteudos[arquivo] = _conteudo(arquivo, "FIN-POL-001")
@@ -1018,7 +1094,7 @@ def test_estado_de_tela_invalido_cai_no_chat(montagens: Montagens) -> None:
 def test_cada_documento_e_lido_uma_vez_apesar_dos_reruns(
     montagens: Montagens, leitura: LeituraFalsa
 ) -> None:
-    at = _clicar(_abrir(), "menu_base_titulo")
+    at = _clicar(_abrir(), "destino_base")
     _clicar(at, "cartao_0")
     _clicar(at, "voltar_lista")
     _clicar(at, "cartao_0")
@@ -1034,9 +1110,9 @@ def test_lista_vazia_mostra_aviso_so_na_tela_da_base(
     listagem.documentos = ()
     at = _abrir()
     assert MENSAGEM_BASE_VAZIA not in _html_da_barra(at)
-    assert _menu(at) == ["menu_base_titulo"]
+    assert _botoes_da_barra(at) == NAV_CHAVES
 
-    _clicar(at, "menu_base_titulo")
+    _clicar(at, "destino_base")
 
     assert MENSAGEM_BASE_VAZIA in _html_da_pagina(at)
     assert not any(str(b.key).startswith("cartao_") for b in at.button)
@@ -1058,7 +1134,7 @@ def test_erro_ao_listar_nao_derruba_a_tela_nem_vaza_detalhes(
     assert "/segredo" not in _conteudo_da_pagina(at)
     assert "sk-123" not in _conteudo_da_pagina(at)
     assert len(_respostas_em_html(at)) == 1
-    _clicar(at, "menu_base_titulo")
+    _clicar(at, "destino_base")
     assert MENSAGEM_BASE_ERRO in _html_da_pagina(at)
 
 
@@ -1069,7 +1145,7 @@ def test_menu_escapa_markdown_do_titulo_hostil(
         composicao.DocumentoDaBase("a.pdf", "[x](http://exemplo.invalido)", "<img src=x>", "*1*"),
     )
 
-    at = _clicar(_abrir(), "menu_base_titulo")
+    at = _clicar(_abrir(), "destino_base")
 
     rotulo = at.button(key="cartao_0").label
     assert "\\<img src=x\\>" in rotulo
@@ -1083,7 +1159,20 @@ def test_lista_da_base_e_lida_uma_vez_apesar_dos_reruns(
     at = _abrir()
     _perguntar(at, "Primeira pergunta?")
     _perguntar(at, "Segunda pergunta?")
-    _clicar(at, "menu_base_titulo")
+    _clicar(at, "destino_base")
 
     assert listagem.chamadas == 1
     assert "3 documentos oficiais" in _html_da_pagina(at)
+
+
+def test_base_a_partir_de_um_documento_volta_a_lista(montagens: Montagens) -> None:
+    # Base é a raiz da seção: estando num documento, o destino leva à lista, não ao chat.
+    at = _clicar(_clicar(_abrir(), "destino_base"), "cartao_0")
+    assert "<h3>1 Objetivo</h3>" in _html_da_pagina(at)
+
+    _clicar(at, "destino_base")
+
+    assert "3 documentos oficiais" in _html_da_pagina(at)
+    assert "<h3>" not in _html_da_pagina(at)
+    assert at.button(key="destino_base").proto.type == "primary"
+    assert at.button(key="destino_perguntar").proto.type == "secondary"

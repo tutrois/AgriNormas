@@ -53,14 +53,14 @@ from interface.marcacao import (  # noqa: E402
     aviso_base_html,
     balao_assistente_html,
     balao_usuario_html,
-    barra_lateral_html,
     boas_vindas_html,
     cabecalho_da_base_html,
     contagem_de_secoes,
+    divisor_html,
     documento_html,
+    marca_da_barra_html,
     meta_do_documento,
     remover_citacoes,
-    resumir,
     rotulo_lista_html,
     rotulo_sugestoes_html,
     titulo_legivel,
@@ -86,8 +86,20 @@ CHAVE_SUGESTAO: Final[str] = "pergunta_sugerida"
 ALTURA_CONVERSA_PARA_ROLAGEM: Final[int] = 400
 ROTULO_SUGESTOES: Final[str] = "Perguntas frequentes"
 TITULO_PAGINA_LEITOR: Final[str] = "Perguntas sobre as normas"
-ROTULO_RECENTES: Final[str] = "Recentes"
+ROTULO_NOVA_CONVERSA: Final[str] = "Nova conversa"
+ROTULO_PERGUNTAR: Final[str] = "Perguntar"
 ROTULO_BASE: Final[str] = "Base de conhecimento"
+ROTULO_RECENTES: Final[str] = "Perguntas recentes"
+# Ícones do Material do Streamlit (fonte local, sem CDN).
+ICONE_NOVA_CONVERSA: Final[str] = ":material/add:"
+ICONE_PERGUNTAR: Final[str] = ":material/chat:"
+ICONE_BASE: Final[str] = ":material/menu_book:"
+# Quantas perguntas a seção "Perguntas recentes" mostra. As demais continuam na sessão.
+LIMITE_RECENTES: Final[int] = 10
+CHAVE_CAMPO: Final[str] = "campo_pergunta"
+CHAVE_BOTAO_NOVA: Final[str] = "nova_conversa"
+CHAVE_DESTINO_PERGUNTAR: Final[str] = "destino_perguntar"
+CHAVE_DESTINO_BASE: Final[str] = "destino_base"
 TEXTO_BASE_VAZIA: Final[str] = "Nenhum documento encontrado na base."
 TEXTO_BASE_ERRO: Final[str] = "Não foi possível listar os documentos."
 TEXTO_DOCUMENTO_ERRO: Final[str] = "Não foi possível abrir este documento."
@@ -98,9 +110,8 @@ ROTULO_VOLTAR_CHAT: Final[str] = "Voltar ao chat"
 ROTULO_VOLTAR_LISTA: Final[str] = "Voltar à lista"
 ROTULO_INDICE: Final[str] = "Seções deste documento"
 ROTULO_FAQ: Final[str] = "Pergunta frequente"
-# O Streamlit não deixa pôr `aria-current` num botão. O estado atual vai no rótulo (lido por
-# leitores de tela) e no destaque visual do botão ativo (`type="primary"`).
-SUFIXO_ATIVO: Final[str] = " (aberto)"
+# O Streamlit não deixa pôr `aria-current` num botão. O destino ativo fica destacado
+# (`type="primary"`) e o título da tela diz onde a pessoa está. O rótulo não muda.
 TELA_CHAT: Final[str] = "chat"
 TELA_BASE: Final[str] = "base"
 TELA_DOCUMENTO: Final[str] = "documento"
@@ -334,6 +345,15 @@ def _ir_para_base() -> None:
     st.session_state.pop(CHAVE_DOCUMENTO, None)
 
 
+def _nova_conversa() -> None:
+    """Callback: zera a conversa, o campo e a seleção, e volta ao chat, sem recarregar a página."""
+    st.session_state[CHAVE_TURNOS] = []
+    st.session_state.pop(CHAVE_SUGESTAO, None)
+    st.session_state.pop(CHAVE_DOCUMENTO, None)
+    st.session_state[CHAVE_TELA] = TELA_CHAT
+    st.session_state[CHAVE_CAMPO] = ""
+
+
 def _ir_para_documento(arquivo: str) -> None:
     """Callback: abre um documento. O nome vem sempre da lista da base, nunca de texto digitado."""
     st.session_state[CHAVE_TELA] = TELA_DOCUMENTO
@@ -344,43 +364,67 @@ def _tipo_do_botao(ativo: bool) -> Literal["primary", "secondary"]:
     return "primary" if ativo else "secondary"
 
 
-def _mostrar_menu_base(tela: str) -> None:
-    """Item "Base de conhecimento" da barra lateral: um botão que abre a lista de documentos.
-
-    Botões do Streamlit mudam só o `session_state`, então a conversa não se perde. É um
-    elemento nativo, alcançável por teclado. Fica destacado (`type="primary"`) enquanto a
-    tela da base estiver aberta, inclusive quando um documento está aberto nela.
-    """
-    with st.container(key="menu_base"):
-        ativa = tela in (TELA_BASE, TELA_DOCUMENTO)
-        rotulo = _escapar_markdown(ROTULO_BASE + (SUFIXO_ATIVO if ativa else ""))
+def _mostrar_acoes() -> None:
+    """Ação "Nova conversa": botão com borda, a única ação com contorno da barra."""
+    with st.container(key="acoes"):
         st.button(
-            rotulo,
-            key="menu_base_titulo",
-            type=_tipo_do_botao(ativa),
+            ROTULO_NOVA_CONVERSA,
+            key=CHAVE_BOTAO_NOVA,
+            icon=ICONE_NOVA_CONVERSA,
+            width="stretch",
+            on_click=_nova_conversa,
+        )
+
+
+def _mostrar_navegacao(tela: str) -> None:
+    """Destinos da barra: "Perguntar" (a conversa) e "Base de conhecimento" (lista e documentos).
+
+    Botões do Streamlit mudam só o `session_state`, então a conversa não se perde. São elementos
+    nativos, alcançáveis por teclado. O destino da tela atual usa `type="primary"` (destaque).
+    """
+    with st.container(key="navegacao"):
+        st.button(
+            ROTULO_PERGUNTAR,
+            key=CHAVE_DESTINO_PERGUNTAR,
+            type=_tipo_do_botao(tela == TELA_CHAT),
+            icon=ICONE_PERGUNTAR,
+            width="stretch",
+            on_click=_ir_para_chat,
+        )
+        st.button(
+            ROTULO_BASE,
+            key=CHAVE_DESTINO_BASE,
+            type=_tipo_do_botao(tela in (TELA_BASE, TELA_DOCUMENTO)),
+            icon=ICONE_BASE,
             width="stretch",
             on_click=_ir_para_base,
         )
 
 
-def _mostrar_recentes(turnos: list[tuple[str, Resposta]], em_chat: bool) -> None:
-    """Seção "Recentes" da barra lateral. Sem perguntas, não mostra rótulo nem lista.
+def _mostrar_recentes(turnos: list[tuple[str, Resposta]]) -> None:
+    """Seção "Perguntas recentes" da barra. Sem perguntas, não mostra divisor, rótulo nem lista.
 
-    Cada pergunta é um botão que volta ao chat. A última fica destacada, só no chat.
+    Mostra as últimas `LIMITE_RECENTES` perguntas, da mais recente para a mais antiga. Cada item
+    leva ao chat (a conversa é mantida). Nenhum item fica destacado. O texto completo vai na
+    dica (`help`) para quem não vê o texto cortado na linha.
     """
     if not turnos:
         return
-    with st.sidebar, st.container(key="lista_conversas"):
-        st.html(rotulo_lista_html(ROTULO_RECENTES))
-        ultima = len(turnos) - 1
-        for indice in range(ultima, -1, -1):
-            st.button(
-                _escapar_markdown(resumir(turnos[indice][0])),
-                key=f"recente_{indice}",
-                type=_tipo_do_botao(em_chat and indice == ultima),
-                width="stretch",
-                on_click=_ir_para_chat,
-            )
+    with st.sidebar:
+        st.html(divisor_html())
+        with st.container(key="lista_conversas"):
+            st.html(rotulo_lista_html(ROTULO_RECENTES))
+            with st.container(key="recentes_lista"):
+                primeiro = max(len(turnos) - LIMITE_RECENTES, 0)
+                for indice in range(len(turnos) - 1, primeiro - 1, -1):
+                    pergunta = _escapar_markdown(turnos[indice][0])
+                    st.button(
+                        pergunta,
+                        key=f"recente_{indice}",
+                        help=pergunta,
+                        width="stretch",
+                        on_click=_ir_para_chat,
+                    )
 
 
 def _botoes_de_volta(*, com_lista: bool) -> None:
@@ -522,11 +566,12 @@ def main() -> None:
         if em_chat
         else st.container(key="tela_base")
     )
-    # Ordem da barra: marca, "Nova conversa", "Base de conhecimento" e, por último, "Recentes"
-    # (esta última é desenhada depois do envio, em `_mostrar_recentes`, e vai para o fim).
+    # Ordem da barra: marca, "Nova conversa", "Perguntar", "Base de conhecimento" e, por último,
+    # "Perguntas recentes" (desenhada depois do envio, em `_mostrar_recentes`, e vai para o fim).
     with st.sidebar:
-        st.html(barra_lateral_html())
-        _mostrar_menu_base(tela)
+        st.html(marca_da_barra_html())
+        _mostrar_acoes()
+        _mostrar_navegacao(tela)
     # A entrada (campo e ajuda) é um bloco só, que fica fixo na base depois da primeira pergunta.
     # Nas telas da base ela continua desenhada, mas escondida pelo CSS: assim o campo não é
     # desmontado e o texto já digitado não se perde ao ir e voltar.
@@ -543,6 +588,7 @@ def main() -> None:
         ):
             pergunta = st.text_input(
                 ROTULO_PERGUNTA,
+                key=CHAVE_CAMPO,
                 placeholder=PLACEHOLDER_PERGUNTA,
                 label_visibility="collapsed",
             )
@@ -556,7 +602,7 @@ def main() -> None:
     else:
         with area_principal:
             _mostrar_tela_da_base(tela, documentos, aberto)
-    _mostrar_recentes(turnos, em_chat)
+    _mostrar_recentes(turnos)
 
 
 main()

@@ -53,6 +53,22 @@ def _bloco_da_regra(seletor: str) -> str:
     return corpo.group(1)
 
 
+def _regra_com_seletor(seletor: str) -> str:
+    """Corpos de todas as regras cujo grupo de seletores inclui `seletor` (exato), juntos.
+
+    Regras com seletores separados por vírgula (hover, foco) e regras repetidas não são achadas
+    por `_bloco_da_regra`. Comentários e as tags `<style>` são tirados antes de ler o CSS.
+    """
+    css = re.sub(r"/\*.*?\*/", "", CSS_PAGINA, flags=re.DOTALL).replace("<style>", "")
+    corpos = [
+        corpo
+        for grupo, corpo in re.findall(r"([^{}]+)\{([^}]*)\}", css)
+        if seletor in [item.strip() for item in grupo.split(",")]
+    ]
+    assert corpos, f"regra com o seletor {seletor} não encontrada"
+    return "\n".join(corpos)
+
+
 def test_css_da_pagina_nao_tem_url_nem_import_nem_origem_externa() -> None:
     assert CSS_PAGINA.startswith("<style>")
     assert "url(" not in CSS_PAGINA
@@ -111,12 +127,20 @@ def test_divisor_de_redimensionar_e_seu_contenor_nao_ocupam_espaco() -> None:
     assert "display: none !important;" in regra
 
 
-def test_botao_nova_conversa_tem_borda_3_para_1_e_destaque_no_sobrevoo_e_foco() -> None:
+def test_botao_nova_conversa_tem_borda_1_px_e_destaque_no_sobrevoo_e_foco() -> None:
+    # "Nova conversa" é o único botão com contorno da barra. Contraste da borda: 3,7:1 sobre preto.
     assert _razao(COR_CONTORNO_TRILHO, COR_TINTA) >= MINIMO_COMPONENTE
     assert _razao(COR_BRANCO, COR_CAMPO_ESCURO_SOBREVOO) >= MINIMO_TEXTO
-    assert "var(--agri-contorno-trilho)" in _bloco_da_regra(".agri-nova")
-    assert "var(--agri-campo-sobrevoo)" in _bloco_da_regra(".agri-nova:hover")
-    assert "var(--agri-destaque)" in _bloco_da_regra(".agri-nova:focus-visible")
+    base = _regra_com_seletor('.st-key-acoes [data-testid="stButton"] button')
+    assert "1px solid var(--agri-contorno-trilho)" in base
+    assert "var(--agri-campo-sobrevoo)" in _regra_com_seletor(
+        '.st-key-acoes [data-testid="stButton"] button:hover'
+    )
+    assert "var(--agri-destaque)" in _regra_com_seletor(
+        '.st-key-acoes [data-testid="stButton"] button:focus-visible'
+    )
+    # Não há mais link: a ação é um botão nativo.
+    assert ".agri-nova" not in CSS_PAGINA
 
 
 def test_selo_sem_evidencia_usa_destaque_e_tinta_e_nao_cor_de_erro() -> None:
@@ -230,10 +254,70 @@ def test_campo_fica_na_base_so_depois_da_primeira_pergunta() -> None:
     assert "margin-top: auto;" in CSS_PAGINA
 
 
-def test_menu_da_base_e_a_tela_da_base_usam_o_estilo_dos_botoes() -> None:
-    # Botões nativos estilizados como itens da barra: foco visível e item ativo destacado.
-    assert '.st-key-menu_base [data-testid="stButton"] button:focus-visible' in CSS_PAGINA
-    assert 'data-testid="stBaseButton-primary"' in CSS_PAGINA
+def test_destino_ativo_tem_fundo_barra_lima_e_texto_branco_600() -> None:
+    # Três marcas no destino ativo: fundo #1f1f22, barra lima de 3 px e texto branco em 600.
+    ativo = '.st-key-navegacao [data-testid="stBaseButton-primary"]'
+    assert "var(--agri-campo-escuro)" in _regra_com_seletor(ativo)
+    barra = _regra_com_seletor(ativo + "::before")
+    assert "width: 3px;" in barra
+    assert "height: 20px;" in barra
+    assert "var(--agri-destaque)" in barra
+    # O texto em 600 usa um seletor mais específico, para vencer a regra geral do texto (500).
+    texto = (
+        '.st-key-navegacao [data-testid="stButton"] button[data-testid="stBaseButton-primary"] p'
+    )
+    assert "font-weight: 600;" in _regra_com_seletor(texto)
+
+
+def test_destinos_tem_40_px_de_altura_texto_a_24_px_e_foco_visivel() -> None:
+    # Alvo de 40 px; padding de 12 px mais o recuo de 12 px da barra dá texto a 24 px da borda.
+    item = _regra_com_seletor('.st-key-navegacao [data-testid="stButton"] button')
+    assert "height: 40px;" in item
+    assert "padding: 0 12px;" in item
+    assert "width: 18px;" in _regra_com_seletor('.st-key-navegacao [data-testid="stIconMaterial"]')
+    assert "gap: 10px;" in _regra_com_seletor(
+        '.st-key-navegacao [data-testid="stButton"] button > div'
+    )
+    foco = _regra_com_seletor('.st-key-navegacao [data-testid="stButton"] button:focus-visible')
+    assert "outline: 2px solid var(--agri-destaque);" in foco
+    assert "outline-offset: 2px;" in foco
+
+
+def test_espacos_da_barra_seguem_a_especificacao_e_o_padrao_do_streamlit_fica_zerado() -> None:
+    # Vãos: 4 px entre itens, 16 px entre blocos. O padrão do Streamlit entre blocos é zerado.
+    assert "gap: 0 !important;" in _regra_com_seletor(
+        '[data-testid="stSidebarUserContent"] [data-testid="stVerticalBlock"]'
+    )
+    assert "gap: 4px !important;" in _regra_com_seletor(
+        '[data-testid="stSidebarUserContent"] .st-key-navegacao'
+    )
+    assert "margin-bottom: 16px;" in _regra_com_seletor(".st-key-acoes")
+    assert "margin: 16px 0;" in _regra_com_seletor(".agri-divisor")
+    assert "height: 1px;" in _regra_com_seletor(".agri-divisor")
+    assert "height: 20px;" in _regra_com_seletor(".agri-lista-rotulo")
+
+
+def test_lista_de_recentes_rola_sozinha_e_a_linha_corta_com_reticencias() -> None:
+    lista = _regra_com_seletor(".st-key-recentes_lista")
+    assert "overflow-y: auto;" in lista
+    assert "max-height: max(120px, calc(100vh - 420px));" in lista
+    texto = _regra_com_seletor('.st-key-recentes_lista [data-testid="stButton"] button p')
+    assert "white-space: nowrap;" in texto
+    assert "text-overflow: ellipsis;" in texto
+
+
+def test_botao_de_abrir_a_barra_no_celular_tem_40_px() -> None:
+    # Alvo de toque: o padrão do Streamlit mede 28 px.
+    regra = _regra_com_seletor('[data-testid="stExpandSidebarButton"]')
+    assert "width: 40px !important;" in regra
+    assert "height: 40px !important;" in regra
+
+
+def test_agri_topo_sem_uso_foi_removido() -> None:
+    assert ".agri-topo" not in CSS_PAGINA
+
+
+def test_grade_de_documentos_continua_no_css() -> None:
     grade = _bloco_da_regra(".st-key-grade_base")
     assert "display: grid !important;" in grade
     assert "repeat(auto-fill, minmax(min(240px, 100%), 1fr))" in grade

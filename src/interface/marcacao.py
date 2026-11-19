@@ -1,8 +1,9 @@
 """Marcação HTML dos blocos da tela: topo, barra lateral, boas-vindas e balões (HIST-030).
 
 Todo texto que vem do usuário ou do núcleo passa por `html.escape`, então vira texto: nenhum
-elemento `<a>` (exceto o link fixo "Nova conversa" e os links `#agri-sec-N` do índice do
-documento, com destino gerado aqui), `<img>` ou `<script>` é criado a partir dele. Este módulo
+elemento `<a>`, `<img>` ou `<script>` é criado a partir dele. Os únicos `<a>` são os links
+`#agri-sec-N` do índice do documento, com destino gerado aqui. Os botões da barra são botões
+nativos do Streamlit (`app.py`), não links. Este módulo
 só organiza o que a página recebe. Não decide nada sobre a pergunta nem sobre a resposta.
 """
 
@@ -16,8 +17,6 @@ from typing import Final, Protocol
 from interface.estilo import TEXTO_MARCA
 
 CLASSE_RESPOSTA: Final[str] = "agrinormas-resposta"
-ROTULO_NOVA_CONVERSA: Final[str] = "Nova conversa"
-DESTINO_NOVA_CONVERSA: Final[str] = "./"
 ROTULO_CHIPS_LEITOR: Final[str] = "Fontes:"
 TIPO_FAQ: Final[str] = "faq"
 PREFIXO_ID_SECAO: Final[str] = "agri-sec-"
@@ -88,19 +87,18 @@ def _rotulo_so_leitor(rotulo: str) -> str:
     return f'<span class="agri-autor agri-so-leitor">{html.escape(rotulo)}</span>'
 
 
-def barra_lateral_html() -> str:
-    """Marca e ação "Nova conversa" no topo da barra lateral.
-
-    O link é uma ação real e precisa ser alcançável por teclado, por isso não fica oculto.
-    Ao abrir o link, a página recarrega e a conversa começa de novo.
-    """
+def marca_da_barra_html() -> str:
+    """Marca do topo da barra lateral. Não é clicável: não é um destino de navegação."""
     return (
         '<div class="agri-marca-bloco">'
         f'<span class="agri-marca" aria-hidden="true">{html.escape(TEXTO_MARCA)}</span>'
         "<span>AgriNormas</span></div>"
-        f'<a class="agri-nova" href="{DESTINO_NOVA_CONVERSA}">'
-        f"{html.escape(ROTULO_NOVA_CONVERSA)}</a>"
     )
+
+
+def divisor_html() -> str:
+    """Linha que separa a navegação do histórico. Decorativa: não tem texto para leitor de tela."""
+    return '<div class="agri-divisor" aria-hidden="true"></div>'
 
 
 def titulo_legivel(titulo: str) -> str:
@@ -129,7 +127,7 @@ def aviso_base_html(texto: str) -> str:
 
 
 def rotulo_lista_html(texto: str) -> str:
-    """Rótulo cinza pequeno da barra lateral (ex.: "Recentes")."""
+    """Rótulo cinza pequeno da barra lateral (ex.: "Perguntas recentes")."""
     return f'<p class="agri-lista-rotulo">{html.escape(texto)}</p>'
 
 
@@ -211,14 +209,6 @@ def documento_html(
         _bloco_da_secao(i, secao, rotulo_faq) for i, secao in enumerate(conteudo.secoes)
     )
     return f'<article class="agri-doc">{cabecalho}{indice}{corpo}</article>'
-
-
-def resumir(texto: str, limite: int = 40) -> str:
-    """Corta o texto em `limite` caracteres, com reticências, sem quebrar a escape depois."""
-    limpo = " ".join(texto.split())
-    if len(limpo) <= limite:
-        return limpo
-    return limpo[: limite - 1].rstrip() + "…"
 
 
 def titulo_para_leitor_html(titulo: str) -> str:

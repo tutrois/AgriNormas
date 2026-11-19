@@ -14,14 +14,14 @@ from interface.marcacao import (
     aviso_base_html,
     balao_assistente_html,
     balao_usuario_html,
-    barra_lateral_html,
     boas_vindas_html,
     cabecalho_da_base_html,
     contagem_de_secoes,
+    divisor_html,
     documento_html,
+    marca_da_barra_html,
     meta_do_documento,
     remover_citacoes,
-    resumir,
     rotulo_lista_html,
     titulo_legivel,
 )
@@ -98,19 +98,17 @@ def test_titulo_e_boas_vindas_escapam_o_texto() -> None:
     assert "&lt;i&gt;s&lt;/i&gt;" in boas_vindas
 
 
-def test_barra_lateral_mostra_marca_e_nova_conversa_sem_ocultar_o_link() -> None:
-    bloco = barra_lateral_html()
+def test_marca_da_barra_e_so_texto_sem_link() -> None:
+    # A marca não é destino de navegação: nada de link nem de botão no bloco.
+    bloco = marca_da_barra_html()
 
     assert '<span class="agri-marca" aria-hidden="true">RH</span>' in bloco
-    assert '<a class="agri-nova" href="./">Nova conversa</a>' in bloco
-    # O link é uma ação real: não pode ficar oculto para leitores de tela.
-    assert "aria-hidden" not in bloco.split("agri-nova", 1)[1]
+    assert "<a " not in bloco
+    assert "Nova conversa" not in bloco
 
 
-def test_resumir_corta_perguntas_longas_com_reticencias() -> None:
-    assert resumir("a" * 80).endswith("…")
-    assert len(resumir("a" * 80)) == 40
-    assert resumir("  curta \n pergunta ") == "curta pergunta"
+def test_divisor_e_decorativo() -> None:
+    assert divisor_html() == '<div class="agri-divisor" aria-hidden="true"></div>'
 
 
 def test_rotulo_da_lista_escapa_o_texto() -> None:
