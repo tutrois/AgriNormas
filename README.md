@@ -121,7 +121,7 @@ Os demais valores já têm padrão no `.env.example`, e um valor vazio usa o pad
 | `LIMIAR_SIMILARIDADE` | `0.40` | Piso de similaridade. Abaixo dele, o trecho é descartado; se nenhum trecho passa, a resposta é "não há evidência", sem chamar o modelo. O piso só separa perguntas sem relação com a base: quem decide se há evidência é a geração, com validação de citações (ADR-011) |
 | `TOP_K` | `8` | Número máximo de trechos recuperados por pergunta |
 | `PASTA_DOCUMENTOS` | `base_conhecimento` | Pasta com os PDFs lidos |
-| `TAMANHO_MAXIMO_CHUNK` | `1200` | Tamanho máximo de uma seção indexada |
+| `TAMANHO_MAXIMO_CHUNK` | `1200` | Tamanho máximo de uma seção indexada. Aceita de 100 a 10000 |
 | `TIMEOUT_SEGUNDOS` | `30` | Tempo limite das chamadas à API |
 
 Se a aplicação mostrar um erro de configuração, confira o nome da variável e o valor no `.env`. A mensagem de erro não mostra o valor.
@@ -201,6 +201,9 @@ AgriNormas/
 │   └── validacao/         # Perguntas de validação e vetores gravados (versionado)
 ├── scripts/               # Calibração do limiar
 ├── dados/                 # Cache do índice, gerado em execução (não versionado)
+├── .github/workflows/     # CI: segredos, ruff, mypy e pytest sem integração
+├── .pre-commit-config.yaml  # Hooks locais: ruff check e ruff format
+├── .python-version        # Versão do Python fixada
 ├── pyproject.toml         # Configuração de ruff, mypy e pytest
 ├── requirements.txt       # Dependências com versões fixadas
 └── .env.example           # Modelo de configuração
