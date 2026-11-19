@@ -230,11 +230,30 @@ def test_campo_fica_na_base_so_depois_da_primeira_pergunta() -> None:
     assert "margin-top: auto;" in CSS_PAGINA
 
 
-def test_lista_da_base_zera_recuo_e_marcadores_do_navegador() -> None:
-    regra = re.search(r"\.agri-base \.agri-base-lista\s*\{([^}]*)\}", CSS_PAGINA)
+def test_menu_da_base_e_a_tela_da_base_usam_o_estilo_dos_botoes() -> None:
+    # Botões nativos estilizados como itens da barra: foco visível e item ativo destacado.
+    assert '.st-key-menu_base [data-testid="stButton"] button:focus-visible' in CSS_PAGINA
+    assert 'data-testid="stBaseButton-primary"' in CSS_PAGINA
+    grade = _bloco_da_regra(".st-key-grade_base")
+    assert "display: grid !important;" in grade
+    assert "repeat(auto-fill, minmax(min(240px, 100%), 1fr))" in grade
 
-    assert regra is not None, "regra da lista da base não encontrada"
-    corpo = regra.group(1)
-    assert "padding: 0 !important" in corpo
-    assert "margin: 0 !important" in corpo
-    assert "list-style: none" in corpo
+
+def test_texto_do_documento_tem_largura_de_leitura_e_16_px() -> None:
+    assert "max-width: 70ch;" in _bloco_da_regra(".agri-doc-secao")
+    paragrafo = _bloco_da_regra(".agri-doc-secao p")
+    assert "font-size: 16px;" in paragrafo
+    assert "line-height: 1.65;" in paragrafo
+
+
+def test_entrada_some_na_tela_da_base_mas_continua_no_dom() -> None:
+    assert ":has(.st-key-tela_base) .st-key-entrada" in CSS_PAGINA
+    assert "display: none !important;" in CSS_PAGINA
+
+
+def test_tela_da_base_comeca_abaixo_da_barra_de_topo_do_streamlit() -> None:
+    # A barra de topo (60 px, z-index alto) cobre o início da área principal e rouba o clique dos
+    # botões de voltar. O recuo vem da variável da barra, menos os 16 px do bloco principal.
+    assert "--agri-barra-topo: 60px;" in CSS_PAGINA
+    tela = _bloco_da_regra(".st-key-tela_base")
+    assert "padding: calc(var(--agri-barra-topo) - 16px) 0 24px;" in tela

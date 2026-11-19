@@ -38,6 +38,8 @@ COR_CONTORNO_TRILHO: Final[str] = "#6b6b73"
 # Fundo do controle da barra com o cursor em cima: texto branco continua acima de 4,5:1.
 COR_CAMPO_ESCURO_SOBREVOO: Final[str] = "#2a2a2e"
 LARGURA_BARRA: Final[str] = "200px"
+# Altura da barra de topo do Streamlit (`stAppToolbar`, fixa e acima do conteúdo, z-index alto).
+ALTURA_BARRA_TOPO: Final[str] = "60px"
 
 # Marca da barra lateral, em texto (a fonte de ícones não é usada).
 TEXTO_MARCA: Final[str] = "RH"
@@ -57,6 +59,7 @@ _VARIAVEIS_CSS: Final[str] = f"""
   --agri-contorno-trilho: {COR_CONTORNO_TRILHO};
   --agri-campo-sobrevoo: {COR_CAMPO_ESCURO_SOBREVOO};
   --agri-barra: {LARGURA_BARRA};
+  --agri-barra-topo: {ALTURA_BARRA_TOPO};
 }}
 """
 
@@ -266,7 +269,7 @@ _REGRAS_CSS: Final[str] = """
   outline: 2px solid var(--agri-destaque);
   outline-offset: 2px;
 }
-/* Rótulo "Recentes": cinza pequeno. O texto dos itens fica recuado do mesmo jeito. */
+/* Rótulo "Recentes" e avisos da base: cinza pequeno (#8a8a92 sobre #0d0d0d passa de 4,5:1). */
 .agri-lista-rotulo {
   margin: 0 0 6px;
   padding: 0 10px;
@@ -274,41 +277,6 @@ _REGRAS_CSS: Final[str] = """
   line-height: 1.4;
   color: var(--agri-texto-trilho-suave);
 }
-.agri-item-conversa {
-  box-sizing: border-box;
-  width: 100%;
-  padding: 7px 10px;
-  border-radius: 8px;
-  font-size: 14px;
-  line-height: 1.4;
-  color: var(--agri-texto-trilho);
-  overflow-wrap: anywhere;
-}
-.agri-item-conversa + .agri-item-conversa {
-  margin-top: 4px;
-}
-/* Pergunta mais recente: a única destacada. Não é link (a sessão não guarda conversas). */
-.agri-item-conversa-atual {
-  background: var(--agri-campo-escuro);
-  color: #ffffff;
-}
-/* Base de conhecimento: mesma família visual de "Recentes". Itens não são links. Rótulo, contador
-   e itens compartilham o mesmo recuo (4 px) para usar a largura da barra. Cinza #8a8a92 e #d6d6da
-   sobre #0d0d0d passam de 4,5:1. O texto quebra em pontos naturais em vez de ser cortado. */
-.agri-base {
-  margin-top: 20px;
-}
-.agri-base h2.agri-lista-rotulo {
-  margin: 0 0 6px;
-  padding: 0 4px;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 400;
-  line-height: 1.4;
-  letter-spacing: normal;
-  color: var(--agri-texto-trilho-suave);
-}
-.agri-base-contagem,
 .agri-base-aviso {
   margin: 0 0 6px;
   padding: 0 4px;
@@ -316,42 +284,89 @@ _REGRAS_CSS: Final[str] = """
   line-height: 1.4;
   color: var(--agri-texto-trilho-suave);
 }
-/* O Streamlit dá recuo de 32 px às listas dentro de `st.html`; o !important o anula. */
-.agri-base .agri-base-lista {
-  margin: 0 !important;
-  padding: 0 !important;
-  list-style: none !important;
+/* Menu da barra lateral ("Recentes" e "Base de conhecimento"): cada item é um botão nativo do
+   Streamlit, com cara de item de lista. O ativo (`primary`) tem fundo mais claro e texto branco.
+   O foco usa contorno lima de 2 px, que não depende só de cor. */
+.st-key-lista_conversas,
+.st-key-menu_base {
+  gap: 4px !important;
 }
-.agri-base-item {
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
+.st-key-menu_base {
+  margin-top: 20px;
+}
+.st-key-lista_conversas [data-testid="stButton"],
+.st-key-menu_base [data-testid="stButton"] {
   width: 100%;
-  padding: 6px 4px;
-  overflow-wrap: break-word;
+  min-width: 0;
 }
-.agri-base-item + .agri-base-item {
-  margin-top: 4px;
-}
-.agri-base-titulo {
-  font-size: 14px;
-  line-height: 1.4;
+.st-key-lista_conversas [data-testid="stButton"] button,
+.st-key-menu_base [data-testid="stButton"] button {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-height: 0;
+  height: auto;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
   color: var(--agri-texto-trilho);
+  text-align: left;
 }
-.agri-base-meta,
-.agri-base-arquivo {
+.st-key-lista_conversas [data-testid="stButton"] button > div,
+.st-key-menu_base [data-testid="stButton"] button > div {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  gap: 0;
+  text-align: left;
+}
+.st-key-lista_conversas [data-testid="stButton"] button p,
+.st-key-menu_base [data-testid="stButton"] button p {
+  margin: 0;
   font-size: 13px;
   line-height: 1.4;
+  text-align: left;
   color: var(--agri-texto-trilho-suave);
+  overflow-wrap: anywhere;
 }
-/* Código e versão ficam inteiros: se não couberem juntos, a versão desce inteira. */
-.agri-base-meta {
-  display: flex;
-  flex-wrap: wrap;
-  column-gap: 0.4em;
+.st-key-lista_conversas [data-testid="stButton"] button p strong,
+.st-key-menu_base [data-testid="stButton"] button p strong {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--agri-texto-trilho);
 }
-.agri-base-meta > span {
-  white-space: nowrap;
+.st-key-lista_conversas [data-testid="stButton"] button:hover,
+.st-key-menu_base [data-testid="stButton"] button:hover {
+  background: var(--agri-campo-escuro);
+}
+.st-key-lista_conversas [data-testid="stButton"] button:focus-visible,
+.st-key-menu_base [data-testid="stButton"] button:focus-visible {
+  outline: 2px solid var(--agri-destaque);
+  outline-offset: 2px;
+}
+.st-key-lista_conversas [data-testid="stBaseButton-primary"],
+.st-key-menu_base [data-testid="stBaseButton-primary"] {
+  background: var(--agri-campo-escuro) !important;
+  color: #ffffff;
+}
+.st-key-lista_conversas [data-testid="stBaseButton-primary"] p,
+.st-key-lista_conversas [data-testid="stBaseButton-primary"] p strong,
+.st-key-menu_base [data-testid="stBaseButton-primary"] p,
+.st-key-menu_base [data-testid="stBaseButton-primary"] p strong {
+  color: #ffffff;
+}
+/* Pergunta recente: uma linha só, em 14 px. */
+.st-key-lista_conversas [data-testid="stButton"] button p {
+  font-size: 14px;
+  color: var(--agri-texto-trilho);
+}
+/* O título "Base de conhecimento" é o primeiro botão do menu: pesa um pouco mais. */
+.st-key-menu_base_titulo [data-testid="stButton"] button p {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--agri-texto-trilho);
 }
 /* A ajuda tem a mesma largura da caixa de pergunta, centralizada abaixo dela. */
 .st-key-ajuda {
@@ -823,6 +838,236 @@ _REGRAS_CSS: Final[str] = """
   font-size: 16px;
   font-weight: 500;
   color: var(--agri-tinta);
+}
+
+/* Tela da base de conhecimento: ocupa o lugar do chat e rola sozinha. A entrada (campo de
+   pergunta) continua no DOM, mas escondida, para não perder o texto digitado. */
+[data-testid="stLayoutWrapper"]:has(> .st-key-tela_base) {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.st-key-tela_base {
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  /* A barra de topo do Streamlit cobre os 60 px de cima e rouba o clique. O conteúdo começa
+     abaixo dela (o bloco principal já tem 16 px de recuo). */
+  padding: calc(var(--agri-barra-topo) - 16px) 0 24px;
+  overflow-y: auto;
+  gap: 14px !important;
+}
+[data-testid="stMainBlockContainer"]:has(.st-key-tela_base) .st-key-entrada,
+[data-testid="stMainBlockContainer"]:has(.st-key-tela_base)
+  [data-testid="stLayoutWrapper"]:has(> .st-key-entrada) {
+  display: none !important;
+}
+/* Botões de volta: secundários, com contorno visível. */
+.st-key-voltar_base {
+  gap: 8px !important;
+}
+.st-key-voltar_base [data-testid="stButton"] button {
+  min-height: 36px;
+  border: 1px solid var(--agri-contorno-controle);
+  border-radius: 10px;
+  background: var(--agri-branco);
+  color: var(--agri-tinta);
+}
+.st-key-voltar_base [data-testid="stButton"] button p {
+  font-size: 14px;
+  color: var(--agri-tinta);
+}
+.st-key-voltar_base [data-testid="stButton"] button:hover {
+  background: var(--agri-fundo);
+  border-color: var(--agri-tinta);
+}
+.st-key-voltar_base [data-testid="stButton"] button:focus-visible {
+  outline: 2px solid var(--agri-tinta);
+  outline-offset: 2px;
+}
+/* Cabeçalho da tela (lista e documento). */
+.agri-tela-cabecalho h2 {
+  margin: 0 0 4px;
+  padding: 0;
+  font-family: inherit;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: normal;
+  color: var(--agri-tinta);
+  overflow-wrap: anywhere;
+}
+.agri-tela-cabecalho p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--agri-secundaria);
+  overflow-wrap: anywhere;
+}
+.agri-tela-cabecalho p.agri-doc-meta {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--agri-tinta);
+}
+/* Os avisos da tela clara usam cinza escuro (o das barras laterais é para fundo preto). */
+.st-key-tela_base .agri-base-aviso {
+  padding: 0;
+  font-size: 15px;
+  color: var(--agri-secundaria);
+}
+/* Grade de cartões: colunas de no mínimo 240 px, de várias colunas até 1 em tela estreita. */
+.st-key-grade_base {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+  gap: 12px !important;
+  align-items: stretch !important;
+}
+.st-key-grade_base > [data-testid="stElementContainer"] {
+  min-width: 0;
+  max-width: 100%;
+}
+.st-key-grade_base [data-testid="stButton"] {
+  width: 100%;
+  height: 100%;
+}
+.st-key-grade_base [data-testid="stButton"] button {
+  box-sizing: border-box;
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 120px;
+  padding: 40px 16px 16px;
+  border: 1px solid var(--agri-contorno-controle);
+  border-radius: 14px;
+  background: var(--agri-branco);
+  color: var(--agri-tinta);
+  text-align: left;
+}
+.st-key-grade_base [data-testid="stButton"] button > div {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  gap: 0;
+}
+.st-key-grade_base [data-testid="stButton"] button::before {
+  content: "";
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--agri-destaque);
+}
+.st-key-grade_base [data-testid="stButton"] button:hover {
+  background: var(--agri-fundo);
+  border-color: var(--agri-tinta);
+}
+.st-key-grade_base [data-testid="stButton"] button:focus-visible {
+  outline: 2px solid var(--agri-tinta);
+  outline-offset: 2px;
+}
+.st-key-grade_base [data-testid="stButton"] button p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: left;
+  color: var(--agri-secundaria);
+  overflow-wrap: anywhere;
+}
+.st-key-grade_base [data-testid="stButton"] button p strong {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--agri-tinta);
+}
+/* Visualização do documento: cartão branco com texto em largura de leitura (cerca de 70
+   caracteres), 16 px e contraste alto. */
+.agri-doc {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 820px;
+  padding: 24px;
+  border: 1px solid var(--agri-contorno-suave);
+  border-radius: 16px;
+  background: var(--agri-branco);
+}
+.agri-doc .agri-tela-cabecalho {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--agri-contorno-suave);
+}
+.agri-doc .agri-tela-cabecalho p.agri-doc-arquivo {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.agri-doc-indice {
+  margin: 0 0 20px;
+  font-size: 15px;
+}
+.agri-doc-indice summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--agri-tinta);
+}
+.agri-doc-indice summary:focus-visible,
+.agri-doc-indice a:focus-visible {
+  outline: 2px solid var(--agri-tinta);
+  outline-offset: 2px;
+}
+.agri-doc-indice ol {
+  margin: 8px 0 0 !important;
+  padding-left: 24px !important;
+  line-height: 1.7;
+}
+.agri-doc-indice a {
+  color: var(--agri-tinta);
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+.agri-doc-secao {
+  max-width: 70ch;
+  margin: 0 0 20px;
+  scroll-margin-top: 16px;
+}
+.agri-doc-secao h3 {
+  margin: 0 0 6px;
+  padding: 0;
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: normal;
+  color: var(--agri-tinta);
+  overflow-wrap: anywhere;
+}
+.agri-doc-secao p {
+  margin: 0 0 10px;
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--agri-tinta);
+  overflow-wrap: anywhere;
+}
+/* Pergunta frequente: bloco distinto, com faixa lateral e rótulo em texto. */
+.agri-doc-faq {
+  padding: 12px 14px;
+  border: 1px solid var(--agri-contorno-suave);
+  border-left: 4px solid var(--agri-tinta);
+  border-radius: 10px;
+  background: var(--agri-fundo);
+}
+.agri-doc-faq-rotulo {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 1px 8px;
+  border-radius: 6px;
+  background: var(--agri-tinta);
+  color: var(--agri-destaque);
+  font-size: 13px;
+  font-weight: 600;
 }
 
 /* Tela estreita (fim do arquivo: estas regras vencem as de largura acima).

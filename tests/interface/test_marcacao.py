@@ -6,17 +6,25 @@ evidência" só aparece quando é pedido.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from interface.marcacao import (
     ajuda_html,
+    aviso_base_html,
     balao_assistente_html,
     balao_usuario_html,
     barra_lateral_html,
-    base_conhecimento_html,
     boas_vindas_html,
-    lista_conversas_html,
+    cabecalho_da_base_html,
+    contagem_de_documentos,
+    contagem_de_secoes,
+    documento_html,
+    meta_do_documento,
     remover_citacoes,
+    resumir,
+    rotulo_lista_html,
+    titulo_legivel,
 )
 
 CARGA_HOSTIL = '<img src=x onerror="alert(1)"> & <a href="http://exemplo.invalido">x</a>'
@@ -100,23 +108,14 @@ def test_barra_lateral_mostra_marca_e_nova_conversa_sem_ocultar_o_link() -> None
     assert "aria-hidden" not in bloco.split("agri-nova", 1)[1]
 
 
-def test_lista_hoje_mostra_as_perguntas_da_mais_recente_para_a_mais_antiga() -> None:
-    bloco = lista_conversas_html(["primeira", "segunda"], "Hoje")
-
-    assert bloco.index("segunda") < bloco.index("primeira")
-    assert 'class="agri-item-conversa agri-item-conversa-atual"' in bloco
-
-
-def test_lista_hoje_escapa_e_corta_perguntas_longas() -> None:
-    bloco = lista_conversas_html(["<b>" + "x" * 80], "Hoje")
-
-    assert "&lt;b&gt;" in bloco
-    assert "…" in bloco
-    assert "<b>" not in bloco
+def test_resumir_corta_perguntas_longas_com_reticencias() -> None:
+    assert resumir("a" * 80).endswith("…")
+    assert len(resumir("a" * 80)) == 40
+    assert resumir("  curta \n pergunta ") == "curta pergunta"
 
 
-def test_lista_hoje_vazia_nao_mostra_nada() -> None:
-    assert lista_conversas_html([], "Hoje") == ""
+def test_rotulo_da_lista_escapa_o_texto() -> None:
+    assert rotulo_lista_html("<b>x</b>") == '<p class="agri-lista-rotulo">&lt;b&gt;x&lt;/b&gt;</p>'
 
 
 def test_ajuda_do_campo_escapa_o_texto() -> None:
@@ -171,70 +170,113 @@ def test_chips_tem_rotulo_para_leitor_de_tela() -> None:
 
 
 @dataclass(frozen=True)
-class _Doc:
+class _Secao:
+    numero: str = "1"
+    titulo: str = "Objetivo"
+    texto: str = "Texto da seção."
+    tipo: str = "norma"
+
+
+@dataclass(frozen=True)
+class _Conteudo:
     arquivo: str = "Politica_Reembolso.pdf"
     codigo: str = "FIN-POL-001"
     titulo: str = "POLÍTICA DE REEMBOLSO"
     versao: str = "1.0"
+    secoes: tuple[_Secao, ...] = (_Secao(),)
 
 
-def _base(documentos: object) -> str:
-    return base_conhecimento_html(documentos, "Base de conhecimento", "Vazia.", "Erro.")  # type: ignore[arg-type]
+def _doc(conteudo: _Conteudo) -> str:
+    return documento_html(conteudo, "Seções", "Pergunta frequente", "Sem seções.")
 
 
-def test_base_mostra_titulo_em_caixa_de_frase_codigo_versao_e_arquivo() -> None:
-    bloco = _base((_Doc(), _Doc(titulo="Procedimento de Férias", versao="")))
-
-    assert "Política de reembolso" in bloco
-    assert "<span>FIN-POL-001</span> <span>v1.0</span>" in bloco
-    assert "Politica_<wbr>Reembolso.<wbr>pdf" in bloco
-    assert "Procedimento de Férias" in bloco
-    assert "2 documentos" in bloco
-    assert 'aria-labelledby="agri-base-titulo"' in bloco
+def test_titulo_legivel_passa_caixa_alta_para_caixa_de_frase() -> None:
+    assert titulo_legivel("POLÍTICA DE REEMBOLSO") == "Política de reembolso"
+    assert titulo_legivel("Procedimento de RH") == "Procedimento de RH"
 
 
-def test_base_usa_singular_para_um_documento() -> None:
-    assert "1 documento<" in _base((_Doc(),))
+def test_meta_do_documento_junta_codigo_e_versao() -> None:
+    assert meta_do_documento("FIN-POL-001", "1.0") == "FIN-POL-001 · v1.0"
+    assert meta_do_documento("FIN-POL-001", "") == "FIN-POL-001"
+    assert meta_do_documento("", "") == ""
 
 
-def test_base_escapa_todo_texto_e_nao_cria_link_nem_imagem() -> None:
-    bloco = _base(
-        (_Doc(arquivo=CARGA_HOSTIL, codigo=CARGA_HOSTIL, titulo=CARGA_HOSTIL, versao="1"),)
+def test_contagens_usam_singular_e_plural() -> None:
+    assert contagem_de_documentos(1) == "1 documento"
+    assert contagem_de_documentos(3) == "3 documentos"
+    assert contagem_de_secoes(1) == "1 seção"
+    assert contagem_de_secoes(12) == "12 seções"
+
+
+def test_aviso_e_cabecalho_da_base_escapam_o_texto() -> None:
+    assert aviso_base_html("<i>x</i>") == '<p class="agri-base-aviso">&lt;i&gt;x&lt;/i&gt;</p>'
+    assert "&lt;b&gt;" in cabecalho_da_base_html("<b>", "<b>")
+
+
+def test_documento_mostra_cabecalho_e_secoes_em_ordem() -> None:
+    conteudo = _Conteudo(
+        secoes=(_Secao("1", "Objetivo", "Primeiro."), _Secao("2.1", "Prazo", "Segundo."))
     )
+
+    bloco = _doc(conteudo)
+
+    assert "<h2>Política de reembolso</h2>" in bloco
+    assert "FIN-POL-001 · v1.0" in bloco
+    assert "Politica_Reembolso.pdf" in bloco
+    assert "<h3>1 Objetivo</h3>" in bloco
+    assert "<h3>2.1 Prazo</h3>" in bloco
+    assert bloco.index("Primeiro.") < bloco.index("Segundo.")
+    assert 'id="agri-sec-0"' in bloco
+    assert 'href="#agri-sec-1"' in bloco
+
+
+def test_documento_faq_fica_em_bloco_distinto_com_rotulo() -> None:
+    bloco = _doc(_Conteudo(secoes=(_Secao("faq-1", "Como pedir?", "Assim.", "faq"),)))
+
+    assert "agri-doc-faq" in bloco
+    assert ">Pergunta frequente<" in bloco
+    assert "agri-doc-faq" not in _doc(_Conteudo())
+
+
+def test_documento_preserva_paragrafos_e_quebras_de_linha() -> None:
+    bloco = _doc(_Conteudo(secoes=(_Secao(texto="Linha 1\nLinha 2\n\nOutro parágrafo"),)))
+
+    assert "<p>Linha 1<br>Linha 2</p>" in bloco
+    assert "<p>Outro parágrafo</p>" in bloco
+
+
+def test_documento_escapa_todo_texto_e_so_cria_os_links_do_indice() -> None:
+    hostil = _Conteudo(
+        arquivo=CARGA_HOSTIL,
+        codigo=CARGA_HOSTIL,
+        titulo=CARGA_HOSTIL,
+        versao=CARGA_HOSTIL,
+        secoes=(
+            _Secao(CARGA_HOSTIL, CARGA_HOSTIL, CARGA_HOSTIL + "\n[a](http://x.invalido)", "faq"),
+        ),
+    )
+
+    bloco = _doc(hostil)
 
     assert CARGA_ESCAPADA in bloco
     assert "<img" not in bloco
-    assert "<a " not in bloco
     assert "<script" not in bloco
+    assert "onerror=&quot;" in bloco  # só como texto escapado
+    assert "http://exemplo.invalido" not in re.sub(r"&lt;.*?&gt;", "", bloco)
+    # os únicos `<a>` são os do índice, com destino gerado pela página
+    assert re.findall(r"<a [^>]*>", bloco) == ['<a href="#agri-sec-0">']
 
 
-def test_base_com_campos_vazios_nao_cria_linhas_vazias() -> None:
-    bloco = _base((_Doc(codigo="", versao=""),))
+def test_documento_sem_secoes_mostra_aviso() -> None:
+    bloco = _doc(_Conteudo(secoes=()))
 
-    assert "agri-base-meta" not in bloco
-    assert " · " not in bloco
-
-
-def test_base_vazia_e_com_erro_mostram_so_o_aviso() -> None:
-    vazia = _base(())
-    erro = _base(None)
-
-    assert "Vazia." in vazia
-    assert "<li" not in vazia
-    assert "Erro." in erro
-    assert "<li" not in erro
-    assert "documentos<" not in erro
+    assert "Sem seções." in bloco
+    assert "<h3" not in bloco
 
 
-def test_base_permite_quebra_no_nome_do_arquivo_sem_quebrar_o_escape() -> None:
-    bloco = _base((_Doc(arquivo="Pol_<b>&x.pdf"),))
+def test_documento_com_campos_vazios_nao_cria_linhas_vazias() -> None:
+    bloco = _doc(_Conteudo(codigo="", versao="", secoes=(_Secao("", "", "Só texto."),)))
 
-    assert "Pol_<wbr>&lt;b&gt;&amp;x.<wbr>pdf" in bloco
-    assert "<b>" not in bloco
-    assert 'Pol_&lt;b&gt;&amp;x.pdf"' in bloco  # a dica (title) guarda o nome completo, escapado
-
-
-def test_base_mantem_codigo_e_versao_em_trechos_que_nao_se_partem() -> None:
-    bloco = _base((_Doc(),))
-
-    assert '<span class="agri-base-meta"><span>FIN-POL-001</span> <span>v1.0</span></span>' in bloco
+    assert "agri-doc-meta" not in bloco
+    assert "<h3" not in bloco
+    assert "Só texto." in bloco

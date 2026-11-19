@@ -151,6 +151,7 @@ DOCUMENTOS = (
 )
 MENSAGEM_BASE_VAZIA = "Nenhum documento encontrado na base."
 MENSAGEM_BASE_ERRO = "Não foi possível listar os documentos."
+TEXTO_DOCUMENTO_ERRO = "Não foi possível abrir este documento."
 
 
 class ListagemFalsa:
@@ -175,8 +176,50 @@ def listagem(monkeypatch: pytest.MonkeyPatch) -> ListagemFalsa:
     return registro
 
 
+def _conteudo(
+    arquivo: str, codigo: str, secoes: tuple[Any, ...] | None = None, titulo: str | None = None
+) -> composicao.ConteudoDoDocumento:
+    """Documento falso: uma seção normal, uma com quebra de linha e uma pergunta frequente."""
+    if secoes is None:
+        secoes = (
+            composicao.SecaoDoDocumento("1", "Objetivo", "Primeira linha\nSegunda linha", "norma"),
+            composicao.SecaoDoDocumento("2", "Prazo", "Texto do prazo.", "norma"),
+            composicao.SecaoDoDocumento("faq-1", "Como pedir?", "Pelo sistema.", "faq"),
+        )
+    return composicao.ConteudoDoDocumento(arquivo, codigo, titulo or arquivo, "1.0", secoes)
+
+
+class LeituraFalsa:
+    """Dublê de `ler_documento_do_ambiente`: registra os arquivos pedidos e pode falhar."""
+
+    def __init__(self) -> None:
+        self.chamadas: list[str] = []
+        self.conteudos: dict[str, Any] = {
+            documento.arquivo: _conteudo(
+                documento.arquivo, documento.codigo, None, documento.titulo
+            )
+            for documento in DOCUMENTOS
+        }
+        self.erro: Exception | None = None
+
+    def __call__(self, arquivo: str) -> Any:
+        self.chamadas.append(arquivo)
+        if self.erro is not None:
+            raise self.erro
+        return self.conteudos.get(arquivo)
+
+
 @pytest.fixture
-def montagens(monkeypatch: pytest.MonkeyPatch, listagem: ListagemFalsa) -> Montagens:
+def leitura(monkeypatch: pytest.MonkeyPatch) -> LeituraFalsa:
+    registro = LeituraFalsa()
+    monkeypatch.setattr(composicao, "ler_documento_do_ambiente", registro)
+    return registro
+
+
+@pytest.fixture
+def montagens(
+    monkeypatch: pytest.MonkeyPatch, listagem: ListagemFalsa, leitura: LeituraFalsa
+) -> Montagens:
     registro = Montagens()
     monkeypatch.setattr(composicao, "montar_assistente_do_ambiente", registro)
     return registro
@@ -252,8 +295,9 @@ def test_abre_pagina_com_campo_de_pergunta_e_botao(montagens: Montagens) -> None
     assert [campo.label for campo in at.text_input] == [ROTULO_PERGUNTA]
     # O botão de envio vem primeiro; depois, um botão por cartão de sugestão.
     assert [botao.label for botao in at.button][0] == TEXTO_BOTAO
-    # Um botão de envio e três cartões (Reembolso, Veículos e Férias).
-    assert len(at.button) == 4
+    # Um botão de envio, três cartões (Reembolso, Veículos e Férias) e o menu da base
+    # (título e três documentos).
+    assert len(at.button) == 8
 
 
 def test_cartao_de_sugestao_envia_pergunta_pronta_e_some_depois(montagens: Montagens) -> None:
@@ -729,55 +773,268 @@ def test_pagina_nunca_exibe_a_chave_da_api_em_nenhum_elemento(montagens: Montage
     assert "sk-" not in _conteudo_da_pagina(at)
 
 
-def _secao_base(at: AppTest) -> str:
-    html_pagina = _html_da_pagina(at)
-    inicio = html_pagina.find('<section class="agri-base"')
-    assert inicio >= 0, "a seção da base de conhecimento não apareceu"
-    return html_pagina[inicio : html_pagina.find("</section>", inicio)]
+def _menu(at: AppTest) -> list[str]:
+    """Chaves dos botões do menu "Base de conhecimento" na barra lateral."""
+    return [botao.key for botao in at.sidebar.button if str(botao.key).startswith("menu_")]  # type: ignore[misc]
 
 
-def test_sidebar_lista_os_tres_documentos_da_base(montagens: Montagens) -> None:
+def _html_da_barra(at: AppTest) -> str:
+    return "\n".join(_valores(at.sidebar.html))
+
+
+def _clicar(at: AppTest, chave: str) -> AppTest:
+    at.button(key=chave).click()
+    at.run()
+    assert not at.exception
+    return at
+
+
+def test_menu_da_base_tem_o_titulo_e_um_botao_por_documento(montagens: Montagens) -> None:
     at = _abrir()
 
-    secao = _secao_base(at)
     assert not at.exception
-    assert "Base de conhecimento" in secao
-    assert "3 documentos" in secao
-    assert "Política de reembolso" in secao
-    assert "<span>FIN-POL-001</span> <span>v1.0</span>" in secao
-    assert "Politica_<wbr>Reembolso.<wbr>pdf" in secao
-    assert 'title="Política de reembolso | FIN-POL-001 · v1.0 | Politica_Reembolso.pdf"' in secao
-    assert "<span>RH-PRC-003</span></span>" in secao  # versão vazia: só o código
-    assert secao.count("<li ") == 3
-    assert not _cria_link_ou_imagem(secao)
+    assert _menu(at) == [
+        "menu_base_titulo",
+        "menu_documento_0",
+        "menu_documento_1",
+        "menu_documento_2",
+    ]
+    assert at.button(key="menu_base_titulo").label == "Base de conhecimento"
+    assert "3 documentos" in _html_da_barra(at)
+    rotulo = at.button(key="menu_documento_0").label
+    assert "**Política de reembolso**" in rotulo
+    assert "FIN\\-POL\\-001 · v1\\.0" in rotulo
+    assert at.button(key="menu_documento_2").label == "**Procedimento de férias**  \nRH\\-PRC\\-003"
 
 
-def test_sidebar_escapa_html_hostil_do_documento(
-    montagens: Montagens, listagem: ListagemFalsa
+def test_clicar_no_titulo_abre_a_lista_no_lugar_do_chat(montagens: Montagens) -> None:
+    at = _perguntar(_abrir(), "Qual é o prazo de entrega?")
+
+    _clicar(at, "menu_base_titulo")
+
+    html_pagina = _html_da_pagina(at)
+    assert "Base de conhecimento" in html_pagina
+    assert "3 documentos oficiais que respondem às perguntas" in html_pagina
+    # Chat, perguntas frequentes e respostas não aparecem; os três cartões sim.
+    assert _autores(at) == []
+    assert not any(str(b.key).startswith("sugestao_") for b in at.button)
+    assert [b.key for b in at.button if str(b.key).startswith("cartao_")] == [
+        "cartao_0",
+        "cartao_1",
+        "cartao_2",
+    ]
+    cartao = at.button(key="cartao_0").label
+    assert "**Política de reembolso**" in cartao
+    assert "FIN\\-POL\\-001 · v1\\.0" in cartao
+    assert "Politica\\_Reembolso\\.pdf" in cartao
+    assert "3 seções" in cartao
+    # Item ativo marcado no menu: destaque (primary) e rótulo com o estado.
+    assert at.button(key="menu_base_titulo").proto.type == "primary"
+    assert at.button(key="menu_base_titulo").label.endswith("\\(aberto\\)")
+    assert at.button(key="menu_documento_0").proto.type == "secondary"
+
+
+def test_ir_para_a_base_e_voltar_preserva_a_conversa(montagens: Montagens) -> None:
+    at = _abrir()
+    _perguntar(at, "Primeira pergunta?")
+    _perguntar(at, "Segunda pergunta?")
+    antes = _respostas_em_html(at)
+
+    _clicar(at, "menu_base_titulo")
+    _clicar(at, "cartao_1")
+    _clicar(at, "voltar_chat")
+
+    assert _respostas_em_html(at) == antes
+    assert _autores(at) == [ROTULO_USUARIO, ROTULO_ASSISTENTE] * 2
+    assert montagens.assistente.perguntas == ["Primeira pergunta?", "Segunda pergunta?"]
+    assert montagens.chamadas == 1
+    assert at.text_input[0].label == ROTULO_PERGUNTA
+
+
+def test_recente_volta_ao_chat_sem_perder_a_conversa(montagens: Montagens) -> None:
+    at = _perguntar(_abrir(), "Qual é o prazo de entrega?")
+    _clicar(at, "menu_documento_1")
+
+    _clicar(at, "recente_0")
+
+    assert len(_respostas_em_html(at)) == 1
+    assert _autores(at) == [ROTULO_USUARIO, ROTULO_ASSISTENTE]
+    assert at.button(key="recente_0").proto.type == "primary"
+
+
+def test_recentes_viram_botoes_escapados_e_cortados(montagens: Montagens) -> None:
+    at = _abrir()
+    _perguntar(at, "primeira")
+    _perguntar(at, "<b>" + "x" * 80)
+
+    rotulos = [at.button(key="recente_1").label, at.button(key="recente_0").label]
+
+    assert rotulos[0].startswith("\\<b\\>")
+    assert rotulos[0].endswith("…")
+    assert rotulos[1] == "primeira"
+    assert at.button(key="recente_1").proto.type == "primary"
+    assert at.button(key="recente_0").proto.type == "secondary"
+
+
+def test_nova_conversa_continua_sendo_o_link_que_recarrega(montagens: Montagens) -> None:
+    html_barra = _html_da_barra(_abrir())
+
+    assert '<a class="agri-nova" href="./">Nova conversa</a>' in html_barra
+    assert "?" not in html_barra.split('href="')[1].split('"')[0]
+
+
+def test_clicar_num_documento_mostra_cabecalho_e_secoes_em_ordem(montagens: Montagens) -> None:
+    at = _abrir()
+
+    _clicar(at, "menu_documento_1")
+
+    html_pagina = _html_da_pagina(at)
+    assert "<h2>Política de veículos</h2>" in html_pagina
+    assert "FRO-POL-002 · v1.0" in html_pagina
+    assert "Politica_Veiculos.pdf" in html_pagina
+    assert "<h3>1 Objetivo</h3>" in html_pagina
+    assert "<h3>2 Prazo</h3>" in html_pagina
+    assert html_pagina.index("Objetivo") < html_pagina.index("Prazo")
+    assert "<p>Primeira linha<br>Segunda linha</p>" in html_pagina
+    assert ">Pergunta frequente<" in html_pagina
+    assert "Voltar à lista" in [b.label for b in at.button]
+    assert "Voltar ao chat" in [b.label for b in at.button]
+    assert at.button(key="menu_documento_1").proto.type == "primary"
+    assert "\\(aberto\\)" in at.button(key="menu_documento_1").label
+    assert at.button(key="menu_base_titulo").proto.type == "secondary"
+    assert _autores(at) == []
+
+
+def test_voltar_a_lista_e_do_documento_e_da_lista_ao_chat(montagens: Montagens) -> None:
+    at = _abrir()
+    _clicar(at, "menu_base_titulo")
+    _clicar(at, "cartao_0")
+
+    _clicar(at, "voltar_lista")
+    assert "3 documentos oficiais" in _html_da_pagina(at)
+    assert "<h3>" not in _html_da_pagina(at)
+
+    _clicar(at, "voltar_chat")
+    assert TITULO_BOAS_VINDAS in _html_da_pagina(at)
+    assert any(str(b.key).startswith("sugestao_") for b in at.button)
+
+
+def test_a_entrada_continua_montada_na_tela_da_base_para_nao_perder_o_texto(
+    montagens: Montagens,
 ) -> None:
-    listagem.documentos = (
-        composicao.DocumentoDaBase(
-            "a<b>.pdf", '"><script>x</script>', "<img src=x onerror=1>", "<i>"
-        ),
+    at = _clicar(_abrir(), "menu_base_titulo")
+
+    assert [campo.label for campo in at.text_input] == [ROTULO_PERGUNTA]
+    assert "tela_base" in _css_da_pagina(at)
+    assert ":has(.st-key-tela_base) .st-key-entrada" in _css_da_pagina(at)
+
+
+def test_texto_hostil_do_documento_e_escapado_na_visualizacao(
+    montagens: Montagens, leitura: LeituraFalsa
+) -> None:
+    hostil = '<img src=x onerror="alert(1)"> <script>x</script> [a](http://exemplo.invalido)'
+    leitura.conteudos["Politica_Reembolso.pdf"] = _conteudo(
+        "Politica_Reembolso.pdf",
+        hostil,
+        (composicao.SecaoDoDocumento(hostil, hostil, hostil + "\n\n" + hostil, "faq"),),
     )
 
-    secao = _secao_base(_abrir())
+    at = _clicar(_clicar(_abrir(), "menu_base_titulo"), "cartao_0")
 
-    assert "<img" not in secao
-    assert "<script" not in secao
-    assert "<b>" not in secao
-    assert "&lt;img src=x onerror=1&gt;" in secao
+    html_pagina = _html_da_pagina(at)
+    assert "<img" not in html_pagina
+    assert "<script>x" not in html_pagina
+    assert "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;" in html_pagina
+    assert "<a " not in re.sub(r'<a href="#agri-sec-\d+">', "", html_pagina).replace(
+        '<a class="agri-nova" href="./">', ""
+    )
 
 
-def test_sidebar_com_lista_vazia_mostra_aviso(
+@pytest.mark.parametrize("falha", ["none", "erro"])
+def test_documento_indisponivel_mostra_mensagem_fixa_sem_detalhes(
+    montagens: Montagens, leitura: LeituraFalsa, falha: str
+) -> None:
+    if falha == "none":
+        leitura.conteudos["Politica_Reembolso.pdf"] = None
+    else:
+        leitura.erro = RuntimeError(f"/segredo/{CHAVE_DE_TESTE}.pdf Traceback")
+
+    at = _clicar(_clicar(_abrir(), "menu_documento_0"), "voltar_lista")
+    at = _clicar(at, "cartao_0")
+
+    texto = _conteudo_da_pagina(at)
+    assert TEXTO_DOCUMENTO_ERRO in _html_da_pagina(at)
+    assert "/segredo" not in texto
+    assert CHAVE_DE_TESTE not in texto
+    assert "Traceback" not in texto
+    assert len(at.error) == 0
+    assert "Voltar à lista" in [b.label for b in at.button]
+
+
+def test_documento_indisponivel_nao_fica_em_cache(
+    montagens: Montagens, leitura: LeituraFalsa
+) -> None:
+    arquivo = "Politica_Reembolso.pdf"
+    leitura.conteudos[arquivo] = None
+    at = _clicar(_abrir(), "menu_documento_0")
+    assert TEXTO_DOCUMENTO_ERRO in _html_da_pagina(at)
+
+    leitura.conteudos[arquivo] = _conteudo(arquivo, "FIN-POL-001")
+    _clicar(at, "voltar_lista")
+    at = _clicar(at, "cartao_0")
+
+    assert TEXTO_DOCUMENTO_ERRO not in _html_da_pagina(at)
+    assert "<h3>1 Objetivo</h3>" in _html_da_pagina(at)
+
+
+def test_arquivo_fora_da_lista_nunca_e_lido(montagens: Montagens, leitura: LeituraFalsa) -> None:
+    at = _abrir()
+    at.session_state["tela_atual"] = "documento"
+    at.session_state["documento_aberto"] = "../../segredo.pdf"
+
+    at.run()
+
+    assert not at.exception
+    assert TEXTO_DOCUMENTO_ERRO in _html_da_pagina(at)
+    assert "../../segredo.pdf" not in _conteudo_da_pagina(at).replace("\\", "")
+    assert "../../segredo.pdf" not in leitura.chamadas
+
+
+def test_estado_de_tela_invalido_cai_no_chat(montagens: Montagens) -> None:
+    at = _abrir()
+    at.session_state["tela_atual"] = "qualquer coisa"
+
+    at.run()
+
+    assert not at.exception
+    assert TITULO_BOAS_VINDAS in _html_da_pagina(at)
+
+
+def test_cada_documento_e_lido_uma_vez_apesar_dos_reruns(
+    montagens: Montagens, leitura: LeituraFalsa
+) -> None:
+    at = _clicar(_abrir(), "menu_base_titulo")
+    _clicar(at, "cartao_0")
+    _clicar(at, "voltar_lista")
+    _clicar(at, "cartao_0")
+    _clicar(at, "voltar_chat")
+    _perguntar(at, "Outra pergunta?")
+
+    assert sorted(leitura.chamadas) == sorted(d.arquivo for d in DOCUMENTOS)
+
+
+def test_lista_vazia_mostra_aviso_no_menu_e_na_tela(
     montagens: Montagens, listagem: ListagemFalsa
 ) -> None:
     listagem.documentos = ()
-
     at = _abrir()
+    assert MENSAGEM_BASE_VAZIA in _html_da_barra(at)
+    assert _menu(at) == ["menu_base_titulo"]
 
-    assert not at.exception
-    assert MENSAGEM_BASE_VAZIA in _secao_base(at)
+    _clicar(at, "menu_base_titulo")
+
+    assert MENSAGEM_BASE_VAZIA in _html_da_pagina(at)
+    assert not any(str(b.key).startswith("cartao_") for b in at.button)
 
 
 @pytest.mark.parametrize(
@@ -792,10 +1049,27 @@ def test_erro_ao_listar_nao_derruba_a_tela_nem_vaza_detalhes(
 
     assert not at.exception
     assert len(at.error) == 0
-    assert MENSAGEM_BASE_ERRO in _secao_base(at)
+    assert MENSAGEM_BASE_ERRO in _html_da_barra(at)
     assert "/segredo" not in _conteudo_da_pagina(at)
     assert "sk-123" not in _conteudo_da_pagina(at)
     assert len(_respostas_em_html(at)) == 1
+    _clicar(at, "menu_base_titulo")
+    assert MENSAGEM_BASE_ERRO in _html_da_pagina(at)
+
+
+def test_menu_escapa_markdown_do_titulo_hostil(
+    montagens: Montagens, listagem: ListagemFalsa
+) -> None:
+    listagem.documentos = (
+        composicao.DocumentoDaBase("a.pdf", "[x](http://exemplo.invalido)", "<img src=x>", "*1*"),
+    )
+
+    at = _abrir()
+
+    rotulo = at.button(key="menu_documento_0").label
+    assert "\\<img src=x\\>" in rotulo
+    assert "\\[x\\]\\(http://exemplo\\.invalido\\)" in rotulo
+    assert not at.exception
 
 
 def test_lista_da_base_e_lida_uma_vez_apesar_dos_reruns(
@@ -804,13 +1078,7 @@ def test_lista_da_base_e_lida_uma_vez_apesar_dos_reruns(
     at = _abrir()
     _perguntar(at, "Primeira pergunta?")
     _perguntar(at, "Segunda pergunta?")
+    _clicar(at, "menu_base_titulo")
 
     assert listagem.chamadas == 1
-    assert "3 documentos" in _secao_base(at)
-
-
-def test_secao_da_base_e_uma_regiao_nomeada_pelo_titulo(montagens: Montagens) -> None:
-    secao = _secao_base(_abrir())
-
-    assert 'aria-labelledby="agri-base-titulo"' in secao
-    assert 'id="agri-base-titulo"' in secao
+    assert "3 documentos" in _html_da_barra(at)

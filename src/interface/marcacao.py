@@ -1,9 +1,9 @@
 """Marcação HTML dos blocos da tela: topo, barra lateral, boas-vindas e balões (HIST-030).
 
 Todo texto que vem do usuário ou do núcleo passa por `html.escape`, então vira texto: nenhum
-elemento `<a>` (exceto o link fixo "Nova conversa"), `<img>` ou `<script>` é criado a partir
-dele. Este módulo só organiza o que a página recebe. Não decide nada sobre a pergunta nem
-sobre a resposta.
+elemento `<a>` (exceto o link fixo "Nova conversa" e os links `#agri-sec-N` do índice do
+documento, com destino gerado aqui), `<img>` ou `<script>` é criado a partir dele. Este módulo
+só organiza o que a página recebe. Não decide nada sobre a pergunta nem sobre a resposta.
 """
 
 from __future__ import annotations
@@ -19,11 +19,25 @@ CLASSE_RESPOSTA: Final[str] = "agrinormas-resposta"
 ROTULO_NOVA_CONVERSA: Final[str] = "Nova conversa"
 DESTINO_NOVA_CONVERSA: Final[str] = "./"
 ROTULO_CHIPS_LEITOR: Final[str] = "Fontes:"
-ID_TITULO_BASE: Final[str] = "agri-base-titulo"
+TIPO_FAQ: Final[str] = "faq"
+PREFIXO_ID_SECAO: Final[str] = "agri-sec-"
 
 
-class DocumentoListado(Protocol):
-    """O que a lista da base precisa de cada documento (satisfeito por `DocumentoDaBase`)."""
+class SecaoLida(Protocol):
+    """O que a tela precisa de cada seção (satisfeito por `SecaoDoDocumento`)."""
+
+    @property
+    def numero(self) -> str: ...
+    @property
+    def titulo(self) -> str: ...
+    @property
+    def texto(self) -> str: ...
+    @property
+    def tipo(self) -> str: ...
+
+
+class ConteudoLido(Protocol):
+    """O que a tela precisa de um documento lido (satisfeito por `ConteudoDoDocumento`)."""
 
     @property
     def arquivo(self) -> str: ...
@@ -33,6 +47,8 @@ class DocumentoListado(Protocol):
     def titulo(self) -> str: ...
     @property
     def versao(self) -> str: ...
+    @property
+    def secoes(self) -> Sequence[SecaoLida]: ...
 
 
 # Citação do núcleo: `[FIN-POL-001 §3.1]`, `[FIN-POL-001 §faq-5]`. Outros colchetes não casam.
@@ -87,25 +103,7 @@ def barra_lateral_html() -> str:
     )
 
 
-def lista_conversas_html(perguntas: Sequence[str], rotulo: str) -> str:
-    """Lista "Recentes" com as perguntas da sessão, da mais recente para a mais antiga.
-
-    Cada pergunta é cortada em tamanho fixo e escapada. A última pergunta fica destacada.
-    Não são links: a sessão não guarda conversas anteriores.
-    """
-    if not perguntas:
-        return ""
-    itens = []
-    recentes = list(reversed(perguntas))
-    for posicao, pergunta in enumerate(recentes):
-        classe = (
-            "agri-item-conversa agri-item-conversa-atual" if posicao == 0 else "agri-item-conversa"
-        )
-        itens.append(f'<div class="{classe}">{html.escape(_resumir(pergunta))}</div>')
-    return f'<p class="agri-lista-rotulo">{html.escape(rotulo)}</p>{"".join(itens)}'
-
-
-def _titulo_legivel(titulo: str) -> str:
+def titulo_legivel(titulo: str) -> str:
     """Títulos todo em caixa alta (ex.: "POLÍTICA DE REEMBOLSO") viram caixa de frase.
 
     Títulos que já têm minúsculas ficam como estão, para não estragar siglas e nomes próprios.
@@ -116,72 +114,110 @@ def _titulo_legivel(titulo: str) -> str:
     return limpo[:1].upper() + limpo[1:]
 
 
-def _contagem(quantidade: int) -> str:
+def meta_do_documento(codigo: str, versao: str) -> str:
+    """ "CÓDIGO · v1.0" em texto puro. A versão ganha o prefixo "v"; partes vazias somem."""
+    return " · ".join(p for p in (codigo, f"v{versao}" if versao else "") if p)
+
+
+def contagem_de_documentos(quantidade: int) -> str:
     return "1 documento" if quantidade == 1 else f"{quantidade} documentos"
 
 
-def _com_pontos_de_quebra(texto: str) -> str:
-    """Escapa o texto e permite quebra de linha depois de "_" e ".", sem partir palavras."""
-    escapado = html.escape(texto)
-    return escapado.replace("_", "_<wbr>").replace(".", ".<wbr>")
+def contagem_de_secoes(quantidade: int) -> str:
+    return "1 seção" if quantidade == 1 else f"{quantidade} seções"
 
 
-def _meta_da_base(codigo: str, versao: str) -> str:
-    """Código e versão em trechos que não se partem. A versão é prefixada com "v"."""
-    partes = []
-    if codigo:
-        partes.append(html.escape(codigo))
-    if versao:
-        partes.append(html.escape(f"v{versao}"))
-    return " ".join(f"<span>{parte}</span>" for parte in partes)
+def aviso_base_html(texto: str) -> str:
+    """Aviso discreto (lista vazia, lista indisponível, documento indisponível)."""
+    return f'<p class="agri-base-aviso">{html.escape(texto)}</p>'
 
 
-def _item_da_base(documento: DocumentoListado) -> str:
-    titulo = _titulo_legivel(documento.titulo) or documento.arquivo
-    meta = _meta_da_base(documento.codigo, documento.versao)
-    linhas = [f'<span class="agri-base-titulo">{html.escape(titulo)}</span>']
-    if meta:
-        linhas.append(f'<span class="agri-base-meta">{meta}</span>')
-    if documento.arquivo:
-        arquivo = _com_pontos_de_quebra(documento.arquivo)
-        linhas.append(f'<span class="agri-base-arquivo">{arquivo}</span>')
-    # O texto nunca é cortado; a dica (title) repete o conteúdo completo para quem passa o mouse.
-    texto_meta = " · ".join(
-        p for p in (documento.codigo, f"v{documento.versao}" if documento.versao else "") if p
-    )
-    dica = " | ".join(parte for parte in (titulo, texto_meta, documento.arquivo) if parte)
-    return f'<li class="agri-base-item" title="{html.escape(dica)}">{"".join(linhas)}</li>'
+def rotulo_lista_html(texto: str) -> str:
+    """Rótulo cinza pequeno da barra lateral (ex.: "Recentes")."""
+    return f'<p class="agri-lista-rotulo">{html.escape(texto)}</p>'
 
 
-def base_conhecimento_html(
-    documentos: Sequence[DocumentoListado] | None,
-    rotulo: str,
-    texto_vazio: str,
-    texto_erro: str,
-) -> str:
-    """Seção "Base de conhecimento" da barra lateral: um item por documento, sem links.
-
-    `documentos` é None quando a lista não pôde ser lida (mostra só `texto_erro`, sem detalhes).
-    A seção é uma região nomeada pelo próprio título, para leitores de tela.
-    """
-    cabecalho = f'<h2 id="{ID_TITULO_BASE}" class="agri-lista-rotulo">{html.escape(rotulo)}</h2>'
-    if documentos is None:
-        corpo = f'<p class="agri-base-aviso">{html.escape(texto_erro)}</p>'
-    elif not documentos:
-        corpo = f'<p class="agri-base-aviso">{html.escape(texto_vazio)}</p>'
-    else:
-        itens = "".join(_item_da_base(documento) for documento in documentos)
-        corpo = (
-            f'<p class="agri-base-contagem">{html.escape(_contagem(len(documentos)))}</p>'
-            f'<ul class="agri-base-lista">{itens}</ul>'
-        )
+def cabecalho_da_base_html(titulo: str, subtitulo: str) -> str:
+    """Título e subtítulo da tela "Base de conhecimento"."""
     return (
-        f'<section class="agri-base" aria-labelledby="{ID_TITULO_BASE}">'
-        f"{cabecalho}{corpo}</section>"
+        '<header class="agri-tela-cabecalho">'
+        f"<h2>{html.escape(titulo)}</h2>"
+        f"<p>{html.escape(subtitulo)}</p></header>"
     )
 
 
-def _resumir(texto: str, limite: int = 40) -> str:
+def _paragrafos(texto: str) -> str:
+    """Texto do documento como parágrafos: linha em branco separa parágrafos, "\n" vira <br>.
+
+    O texto é dado, não marcação: tudo passa por `html.escape` e nada além de `<p>` e `<br>`
+    é criado a partir dele.
+    """
+    blocos = re.split(r"\n\s*\n", texto.replace("\r\n", "\n").replace("\r", "\n"))
+    saida = []
+    for bloco in blocos:
+        limpo = bloco.strip()
+        if limpo:
+            saida.append(f"<p>{html.escape(limpo).replace(chr(10), '<br>')}</p>")
+    return "".join(saida)
+
+
+def _rotulo_da_secao(secao: SecaoLida) -> str:
+    return " ".join(parte for parte in (secao.numero.strip(), secao.titulo.strip()) if parte)
+
+
+def _bloco_da_secao(indice: int, secao: SecaoLida, rotulo_faq: str) -> str:
+    # O `id` vem do índice da seção, nunca do texto do documento.
+    titulo = _rotulo_da_secao(secao)
+    cabecalho = f"<h3>{html.escape(titulo)}</h3>" if titulo else ""
+    if secao.tipo == TIPO_FAQ:
+        marca = f'<span class="agri-doc-faq-rotulo">{html.escape(rotulo_faq)}</span>'
+        classe = "agri-doc-secao agri-doc-faq"
+    else:
+        marca = ""
+        classe = "agri-doc-secao"
+    return (
+        f'<section class="{classe}" id="{PREFIXO_ID_SECAO}{indice}">'
+        f"{marca}{cabecalho}{_paragrafos(secao.texto)}</section>"
+    )
+
+
+def _indice_html(secoes: Sequence[SecaoLida], rotulo: str) -> str:
+    itens = "".join(
+        f'<li><a href="#{PREFIXO_ID_SECAO}{i}">'
+        f"{html.escape(_rotulo_da_secao(secao) or str(i + 1))}</a></li>"
+        for i, secao in enumerate(secoes)
+    )
+    return (
+        f'<nav class="agri-doc-indice" aria-label="{html.escape(rotulo)}">'
+        f"<details><summary>{html.escape(rotulo)}</summary><ol>{itens}</ol></details></nav>"
+    )
+
+
+def documento_html(
+    conteudo: ConteudoLido, rotulo_indice: str, rotulo_faq: str, texto_sem_secoes: str
+) -> str:
+    """Cabeçalho e seções de um documento, em texto escapado e sem links criados pelo texto.
+
+    Os únicos `<a>` são os do índice, com destino `#agri-sec-N` gerado aqui (não vem do texto).
+    """
+    titulo = titulo_legivel(conteudo.titulo) or conteudo.arquivo
+    meta = meta_do_documento(conteudo.codigo, conteudo.versao)
+    linhas = [f"<h2>{html.escape(titulo)}</h2>"]
+    if meta:
+        linhas.append(f'<p class="agri-doc-meta">{html.escape(meta)}</p>')
+    if conteudo.arquivo:
+        linhas.append(f'<p class="agri-doc-arquivo">{html.escape(conteudo.arquivo)}</p>')
+    cabecalho = f'<header class="agri-tela-cabecalho">{"".join(linhas)}</header>'
+    if not conteudo.secoes:
+        return f'<article class="agri-doc">{cabecalho}{aviso_base_html(texto_sem_secoes)}</article>'
+    indice = _indice_html(conteudo.secoes, rotulo_indice)
+    corpo = "".join(
+        _bloco_da_secao(i, secao, rotulo_faq) for i, secao in enumerate(conteudo.secoes)
+    )
+    return f'<article class="agri-doc">{cabecalho}{indice}{corpo}</article>'
+
+
+def resumir(texto: str, limite: int = 40) -> str:
     """Corta o texto em `limite` caracteres, com reticências, sem quebrar a escape depois."""
     limpo = " ".join(texto.split())
     if len(limpo) <= limite:
