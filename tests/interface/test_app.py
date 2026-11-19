@@ -295,9 +295,9 @@ def test_abre_pagina_com_campo_de_pergunta_e_botao(montagens: Montagens) -> None
     assert [campo.label for campo in at.text_input] == [ROTULO_PERGUNTA]
     # O botão de envio vem primeiro; depois, um botão por cartão de sugestão.
     assert [botao.label for botao in at.button][0] == TEXTO_BOTAO
-    # Um botão de envio, três cartões (Reembolso, Veículos e Férias) e o menu da base
-    # (título e três documentos).
-    assert len(at.button) == 8
+    # Um botão de envio, três cartões (Reembolso, Veículos e Férias) e o item "Base de
+    # conhecimento" da barra. Os documentos não aparecem na barra.
+    assert len(at.button) == 5
 
 
 def test_cartao_de_sugestao_envia_pergunta_pronta_e_some_depois(montagens: Montagens) -> None:
@@ -789,22 +789,26 @@ def _clicar(at: AppTest, chave: str) -> AppTest:
     return at
 
 
-def test_menu_da_base_tem_o_titulo_e_um_botao_por_documento(montagens: Montagens) -> None:
+def test_barra_tem_so_o_item_base_sem_documentos_nem_contagem(montagens: Montagens) -> None:
     at = _abrir()
 
     assert not at.exception
-    assert _menu(at) == [
-        "menu_base_titulo",
-        "menu_documento_0",
-        "menu_documento_1",
-        "menu_documento_2",
-    ]
+    assert _menu(at) == ["menu_base_titulo"]
     assert at.button(key="menu_base_titulo").label == "Base de conhecimento"
-    assert "3 documentos" in _html_da_barra(at)
-    rotulo = at.button(key="menu_documento_0").label
-    assert "**Política de reembolso**" in rotulo
-    assert "FIN\\-POL\\-001 · v1\\.0" in rotulo
-    assert at.button(key="menu_documento_2").label == "**Procedimento de férias**  \nRH\\-PRC\\-003"
+    assert at.button(key="menu_base_titulo").proto.type == "secondary"
+    # Sem conversa, "Recentes" não aparece: nem o rótulo nem a lista.
+    assert "Recentes" not in _html_da_barra(at)
+    assert not any(str(b.key).startswith("recente_") for b in at.button)
+    # A contagem e os documentos ficam só na tela da base.
+    assert "documentos" not in _html_da_barra(at)
+    assert not any(str(b.key).startswith("menu_documento_") for b in at.button)
+
+
+def test_recentes_fica_depois_da_base_na_barra(montagens: Montagens) -> None:
+    at = _perguntar(_abrir(), "Qual é o prazo de entrega?")
+
+    assert "Recentes" in _html_da_barra(at)
+    assert [b.key for b in at.sidebar.button] == ["menu_base_titulo", "recente_0"]
 
 
 def test_clicar_no_titulo_abre_a_lista_no_lugar_do_chat(montagens: Montagens) -> None:
@@ -828,10 +832,11 @@ def test_clicar_no_titulo_abre_a_lista_no_lugar_do_chat(montagens: Montagens) ->
     assert "FIN\\-POL\\-001 · v1\\.0" in cartao
     assert "Politica\\_Reembolso\\.pdf" in cartao
     assert "3 seções" in cartao
-    # Item ativo marcado no menu: destaque (primary) e rótulo com o estado.
+    # Item ativo marcado na barra: destaque (primary) e rótulo com o estado.
     assert at.button(key="menu_base_titulo").proto.type == "primary"
     assert at.button(key="menu_base_titulo").label.endswith("\\(aberto\\)")
-    assert at.button(key="menu_documento_0").proto.type == "secondary"
+    # Na tela da base, "Recentes" não tem destaque.
+    assert at.button(key="recente_0").proto.type == "secondary"
 
 
 def test_ir_para_a_base_e_voltar_preserva_a_conversa(montagens: Montagens) -> None:
@@ -853,7 +858,7 @@ def test_ir_para_a_base_e_voltar_preserva_a_conversa(montagens: Montagens) -> No
 
 def test_recente_volta_ao_chat_sem_perder_a_conversa(montagens: Montagens) -> None:
     at = _perguntar(_abrir(), "Qual é o prazo de entrega?")
-    _clicar(at, "menu_documento_1")
+    _clicar(at, "menu_base_titulo")
 
     _clicar(at, "recente_0")
 
@@ -886,7 +891,7 @@ def test_nova_conversa_continua_sendo_o_link_que_recarrega(montagens: Montagens)
 def test_clicar_num_documento_mostra_cabecalho_e_secoes_em_ordem(montagens: Montagens) -> None:
     at = _abrir()
 
-    _clicar(at, "menu_documento_1")
+    at = _clicar(_clicar(_abrir(), "menu_base_titulo"), "cartao_1")
 
     html_pagina = _html_da_pagina(at)
     assert "<h2>Política de veículos</h2>" in html_pagina
@@ -899,9 +904,10 @@ def test_clicar_num_documento_mostra_cabecalho_e_secoes_em_ordem(montagens: Mont
     assert ">Pergunta frequente<" in html_pagina
     assert "Voltar à lista" in [b.label for b in at.button]
     assert "Voltar ao chat" in [b.label for b in at.button]
-    assert at.button(key="menu_documento_1").proto.type == "primary"
-    assert "\\(aberto\\)" in at.button(key="menu_documento_1").label
-    assert at.button(key="menu_base_titulo").proto.type == "secondary"
+    # A barra continua com a seção "Base de conhecimento" destacada, sem itens por documento.
+    assert at.button(key="menu_base_titulo").proto.type == "primary"
+    assert at.button(key="menu_base_titulo").label.endswith("\\(aberto\\)")
+    assert _menu(at) == ["menu_base_titulo"]
     assert _autores(at) == []
 
 
@@ -959,8 +965,7 @@ def test_documento_indisponivel_mostra_mensagem_fixa_sem_detalhes(
     else:
         leitura.erro = RuntimeError(f"/segredo/{CHAVE_DE_TESTE}.pdf Traceback")
 
-    at = _clicar(_clicar(_abrir(), "menu_documento_0"), "voltar_lista")
-    at = _clicar(at, "cartao_0")
+    at = _clicar(_clicar(_abrir(), "menu_base_titulo"), "cartao_0")
 
     texto = _conteudo_da_pagina(at)
     assert TEXTO_DOCUMENTO_ERRO in _html_da_pagina(at)
@@ -976,7 +981,7 @@ def test_documento_indisponivel_nao_fica_em_cache(
 ) -> None:
     arquivo = "Politica_Reembolso.pdf"
     leitura.conteudos[arquivo] = None
-    at = _clicar(_abrir(), "menu_documento_0")
+    at = _clicar(_clicar(_abrir(), "menu_base_titulo"), "cartao_0")
     assert TEXTO_DOCUMENTO_ERRO in _html_da_pagina(at)
 
     leitura.conteudos[arquivo] = _conteudo(arquivo, "FIN-POL-001")
@@ -1023,12 +1028,12 @@ def test_cada_documento_e_lido_uma_vez_apesar_dos_reruns(
     assert sorted(leitura.chamadas) == sorted(d.arquivo for d in DOCUMENTOS)
 
 
-def test_lista_vazia_mostra_aviso_no_menu_e_na_tela(
+def test_lista_vazia_mostra_aviso_so_na_tela_da_base(
     montagens: Montagens, listagem: ListagemFalsa
 ) -> None:
     listagem.documentos = ()
     at = _abrir()
-    assert MENSAGEM_BASE_VAZIA in _html_da_barra(at)
+    assert MENSAGEM_BASE_VAZIA not in _html_da_barra(at)
     assert _menu(at) == ["menu_base_titulo"]
 
     _clicar(at, "menu_base_titulo")
@@ -1049,7 +1054,7 @@ def test_erro_ao_listar_nao_derruba_a_tela_nem_vaza_detalhes(
 
     assert not at.exception
     assert len(at.error) == 0
-    assert MENSAGEM_BASE_ERRO in _html_da_barra(at)
+    assert MENSAGEM_BASE_ERRO not in _html_da_barra(at)
     assert "/segredo" not in _conteudo_da_pagina(at)
     assert "sk-123" not in _conteudo_da_pagina(at)
     assert len(_respostas_em_html(at)) == 1
@@ -1064,9 +1069,9 @@ def test_menu_escapa_markdown_do_titulo_hostil(
         composicao.DocumentoDaBase("a.pdf", "[x](http://exemplo.invalido)", "<img src=x>", "*1*"),
     )
 
-    at = _abrir()
+    at = _clicar(_abrir(), "menu_base_titulo")
 
-    rotulo = at.button(key="menu_documento_0").label
+    rotulo = at.button(key="cartao_0").label
     assert "\\<img src=x\\>" in rotulo
     assert "\\[x\\]\\(http://exemplo\\.invalido\\)" in rotulo
     assert not at.exception
@@ -1081,4 +1086,4 @@ def test_lista_da_base_e_lida_uma_vez_apesar_dos_reruns(
     _clicar(at, "menu_base_titulo")
 
     assert listagem.chamadas == 1
-    assert "3 documentos" in _html_da_barra(at)
+    assert "3 documentos oficiais" in _html_da_pagina(at)

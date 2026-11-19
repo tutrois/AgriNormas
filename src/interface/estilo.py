@@ -9,8 +9,8 @@ e os ícones aparecem como quadrados. Por isso esta tela não usa ícone de font
 - a seta do botão de envio é ícone nativo do Streamlit, em `app.py`.
 
 Layout (referência aprovada pelo coordenador): barra lateral escura de 200 px com marca,
-"Nova conversa" e "Recentes". A área clara tem cabeçalho discreto, saudação
-centralizada, o campo de pergunta em cartão branco e três cartões de sugestão.
+"Nova conversa", "Base de conhecimento" e "Recentes", nessa ordem. A área clara tem cabeçalho
+discreto, saudação centralizada, o campo de pergunta em cartão branco e três cartões de sugestão.
 
 A barra tem 200 px só enquanto está aberta (`data-collapsed="false"`). Quando recolhida, o
 Streamlit cuida da largura, e a regra fixa não a impede de sumir.
@@ -269,7 +269,7 @@ _REGRAS_CSS: Final[str] = """
   outline: 2px solid var(--agri-destaque);
   outline-offset: 2px;
 }
-/* Rótulo "Recentes" e avisos da base: cinza pequeno (#8a8a92 sobre #0d0d0d passa de 4,5:1). */
+/* Rótulo "Recentes": cinza pequeno (#8a8a92 sobre #0d0d0d passa de 4,5:1). */
 .agri-lista-rotulo {
   margin: 0 0 6px;
   padding: 0 10px;
@@ -277,44 +277,36 @@ _REGRAS_CSS: Final[str] = """
   line-height: 1.4;
   color: var(--agri-texto-trilho-suave);
 }
-.agri-base-aviso {
-  margin: 0 0 6px;
-  padding: 0 4px;
-  font-size: 13px;
-  line-height: 1.4;
-  color: var(--agri-texto-trilho-suave);
-}
-/* Menu da barra lateral ("Recentes" e "Base de conhecimento"): cada item é um botão nativo do
-   Streamlit, com cara de item de lista. O ativo (`primary`) tem fundo mais claro e texto branco.
+/* Seções da barra lateral ("Base de conhecimento" e "Recentes"). Cada item é um botão nativo do
+   Streamlit com cara de item de lista, com o mesmo recuo de "Nova conversa" (10 px), para o texto
+   alinhar com o rótulo "Recentes". O ativo (`primary`) tem fundo mais claro e texto branco.
    O foco usa contorno lima de 2 px, que não depende só de cor. */
-.st-key-lista_conversas,
-.st-key-menu_base {
+.st-key-menu_base,
+.st-key-lista_conversas {
   gap: 4px !important;
-}
-.st-key-menu_base {
   margin-top: 20px;
 }
-.st-key-lista_conversas [data-testid="stButton"],
-.st-key-menu_base [data-testid="stButton"] {
+.st-key-menu_base [data-testid="stButton"],
+.st-key-lista_conversas [data-testid="stButton"] {
   width: 100%;
   min-width: 0;
 }
-.st-key-lista_conversas [data-testid="stButton"] button,
-.st-key-menu_base [data-testid="stButton"] button {
+.st-key-menu_base [data-testid="stButton"] button,
+.st-key-lista_conversas [data-testid="stButton"] button {
   box-sizing: border-box;
   display: block;
   width: 100%;
   min-height: 0;
   height: auto;
-  padding: 7px 8px;
+  padding: 7px 10px;
   border: none;
   border-radius: 8px;
   background: transparent;
   color: var(--agri-texto-trilho);
   text-align: left;
 }
-.st-key-lista_conversas [data-testid="stButton"] button > div,
-.st-key-menu_base [data-testid="stButton"] button > div {
+.st-key-menu_base [data-testid="stButton"] button > div,
+.st-key-lista_conversas [data-testid="stButton"] button > div {
   display: block;
   width: 100%;
   margin: 0;
@@ -322,51 +314,32 @@ _REGRAS_CSS: Final[str] = """
   gap: 0;
   text-align: left;
 }
-.st-key-lista_conversas [data-testid="stButton"] button p,
-.st-key-menu_base [data-testid="stButton"] button p {
+.st-key-menu_base [data-testid="stButton"] button p,
+.st-key-lista_conversas [data-testid="stButton"] button p {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.4;
   text-align: left;
-  color: var(--agri-texto-trilho-suave);
+  color: var(--agri-texto-trilho);
   overflow-wrap: anywhere;
 }
-.st-key-lista_conversas [data-testid="stButton"] button p strong,
-.st-key-menu_base [data-testid="stButton"] button p strong {
-  font-size: 14px;
-  font-weight: 400;
-  color: var(--agri-texto-trilho);
-}
-.st-key-lista_conversas [data-testid="stButton"] button:hover,
-.st-key-menu_base [data-testid="stButton"] button:hover {
+.st-key-menu_base [data-testid="stButton"] button:hover,
+.st-key-lista_conversas [data-testid="stButton"] button:hover {
   background: var(--agri-campo-escuro);
 }
-.st-key-lista_conversas [data-testid="stButton"] button:focus-visible,
-.st-key-menu_base [data-testid="stButton"] button:focus-visible {
+.st-key-menu_base [data-testid="stButton"] button:focus-visible,
+.st-key-lista_conversas [data-testid="stButton"] button:focus-visible {
   outline: 2px solid var(--agri-destaque);
   outline-offset: 2px;
 }
-.st-key-lista_conversas [data-testid="stBaseButton-primary"],
-.st-key-menu_base [data-testid="stBaseButton-primary"] {
+.st-key-menu_base [data-testid="stBaseButton-primary"],
+.st-key-lista_conversas [data-testid="stBaseButton-primary"] {
   background: var(--agri-campo-escuro) !important;
   color: #ffffff;
 }
-.st-key-lista_conversas [data-testid="stBaseButton-primary"] p,
-.st-key-lista_conversas [data-testid="stBaseButton-primary"] p strong,
 .st-key-menu_base [data-testid="stBaseButton-primary"] p,
-.st-key-menu_base [data-testid="stBaseButton-primary"] p strong {
+.st-key-lista_conversas [data-testid="stBaseButton-primary"] p {
   color: #ffffff;
-}
-/* Pergunta recente: uma linha só, em 14 px. */
-.st-key-lista_conversas [data-testid="stButton"] button p {
-  font-size: 14px;
-  color: var(--agri-texto-trilho);
-}
-/* O título "Base de conhecimento" é o primeiro botão do menu: pesa um pouco mais. */
-.st-key-menu_base_titulo [data-testid="stButton"] button p {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--agri-texto-trilho);
 }
 /* A ajuda tem a mesma largura da caixa de pergunta, centralizada abaixo dela. */
 .st-key-ajuda {
@@ -913,6 +886,7 @@ _REGRAS_CSS: Final[str] = """
 }
 /* Os avisos da tela clara usam cinza escuro (o das barras laterais é para fundo preto). */
 .st-key-tela_base .agri-base-aviso {
+  margin: 0 0 6px;
   padding: 0;
   font-size: 15px;
   color: var(--agri-secundaria);

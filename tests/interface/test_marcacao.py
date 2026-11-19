@@ -17,7 +17,6 @@ from interface.marcacao import (
     barra_lateral_html,
     boas_vindas_html,
     cabecalho_da_base_html,
-    contagem_de_documentos,
     contagem_de_secoes,
     documento_html,
     meta_do_documento,
@@ -201,9 +200,7 @@ def test_meta_do_documento_junta_codigo_e_versao() -> None:
     assert meta_do_documento("", "") == ""
 
 
-def test_contagens_usam_singular_e_plural() -> None:
-    assert contagem_de_documentos(1) == "1 documento"
-    assert contagem_de_documentos(3) == "3 documentos"
+def test_contagem_de_secoes_usa_singular_e_plural() -> None:
     assert contagem_de_secoes(1) == "1 seção"
     assert contagem_de_secoes(12) == "12 seções"
 

@@ -53,9 +53,9 @@ class ConteudoLido(Protocol):
 
 # Citação do núcleo: `[FIN-POL-001 §3.1]`, `[FIN-POL-001 §faq-5]`. Outros colchetes não casam.
 _CITACAO: Final[str] = r"\[[A-Za-z0-9][A-Za-z0-9_-]*\s*§\s*[A-Za-z0-9][A-Za-z0-9._-]*\]"
-_SEQUENCIA_CITACOES: Final[re.Pattern[str]] = re.compile(rf"[ 	]*(?:{_CITACAO}[ 	]*)+")
-_ESPACOS_REPETIDOS: Final[re.Pattern[str]] = re.compile(r"(?<=\S)[ 	]{2,}")
-_ESPACO_NO_FIM_DA_LINHA: Final[re.Pattern[str]] = re.compile(r"[ 	]+$", re.MULTILINE)
+_SEQUENCIA_CITACOES: Final[re.Pattern[str]] = re.compile(rf"[ \t]*(?:{_CITACAO}[ \t]*)+")
+_ESPACOS_REPETIDOS: Final[re.Pattern[str]] = re.compile(r"(?<=\S)[ \t]{2,}")
+_ESPACO_NO_FIM_DA_LINHA: Final[re.Pattern[str]] = re.compile(r"[ \t]+$", re.MULTILINE)
 
 
 def remover_citacoes(texto: str) -> str:
@@ -117,10 +117,6 @@ def titulo_legivel(titulo: str) -> str:
 def meta_do_documento(codigo: str, versao: str) -> str:
     """ "CÓDIGO · v1.0" em texto puro. A versão ganha o prefixo "v"; partes vazias somem."""
     return " · ".join(p for p in (codigo, f"v{versao}" if versao else "") if p)
-
-
-def contagem_de_documentos(quantidade: int) -> str:
-    return "1 documento" if quantidade == 1 else f"{quantidade} documentos"
 
 
 def contagem_de_secoes(quantidade: int) -> str:

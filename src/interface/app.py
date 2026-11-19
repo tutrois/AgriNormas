@@ -56,7 +56,6 @@ from interface.marcacao import (  # noqa: E402
     barra_lateral_html,
     boas_vindas_html,
     cabecalho_da_base_html,
-    contagem_de_documentos,
     contagem_de_secoes,
     documento_html,
     meta_do_documento,
@@ -186,7 +185,7 @@ def _conteudo_ou_none(arquivo: str) -> ConteudoDoDocumento | None:
 
 
 def _documentos_ou_none() -> tuple[DocumentoDaBase, ...] | None:
-    """Lista para a barra lateral. Qualquer falha vira None e não derruba a tela."""
+    """Lista da base para as telas da base. Qualquer falha vira None e não derruba a página."""
     try:
         return _documentos_da_base()
     except Exception as erro:
@@ -341,29 +340,19 @@ def _ir_para_documento(arquivo: str) -> None:
     st.session_state[CHAVE_DOCUMENTO] = arquivo
 
 
-def _rotulo_do_item(titulo: str, meta: str, ativo: bool) -> str:
-    """Rótulo do botão da barra lateral: título em destaque e, abaixo, código e versão."""
-    sufixo = _escapar_markdown(SUFIXO_ATIVO) if ativo else ""
-    linhas = [f"**{_escapar_markdown(titulo)}**{sufixo}"]
-    if meta:
-        linhas.append(_escapar_markdown(meta))
-    return QUEBRA_DE_LINHA.join(linhas)
-
-
 def _tipo_do_botao(ativo: bool) -> Literal["primary", "secondary"]:
     return "primary" if ativo else "secondary"
 
 
-def _mostrar_menu_base(
-    documentos: tuple[DocumentoDaBase, ...] | None, tela: str, aberto: str | None
-) -> None:
-    """Menu "Base de conhecimento" da barra lateral: o título e cada documento são botões.
+def _mostrar_menu_base(tela: str) -> None:
+    """Item "Base de conhecimento" da barra lateral: um botão que abre a lista de documentos.
 
-    Botões do Streamlit mudam só o `session_state`, então a conversa não se perde. São
-    elementos nativos, alcançáveis por teclado. O item ativo usa `type="primary"` (destaque).
+    Botões do Streamlit mudam só o `session_state`, então a conversa não se perde. É um
+    elemento nativo, alcançável por teclado. Fica destacado (`type="primary"`) enquanto a
+    tela da base estiver aberta, inclusive quando um documento está aberto nela.
     """
     with st.container(key="menu_base"):
-        ativa = tela == TELA_BASE
+        ativa = tela in (TELA_BASE, TELA_DOCUMENTO)
         rotulo = _escapar_markdown(ROTULO_BASE + (SUFIXO_ATIVO if ativa else ""))
         st.button(
             rotulo,
@@ -372,38 +361,26 @@ def _mostrar_menu_base(
             width="stretch",
             on_click=_ir_para_base,
         )
-        if documentos is None:
-            st.html(aviso_base_html(TEXTO_BASE_ERRO))
-        elif not documentos:
-            st.html(aviso_base_html(TEXTO_BASE_VAZIA))
-        else:
-            st.html(aviso_base_html(contagem_de_documentos(len(documentos))))
-            for indice, documento in enumerate(documentos):
-                ativo = tela == TELA_DOCUMENTO and documento.arquivo == aberto
-                titulo = titulo_legivel(documento.titulo) or documento.arquivo
-                meta = meta_do_documento(documento.codigo, documento.versao)
-                st.button(
-                    _rotulo_do_item(titulo, meta, ativo),
-                    key=f"menu_documento_{indice}",
-                    type=_tipo_do_botao(ativo),
-                    width="stretch",
-                    on_click=_ir_para_documento,
-                    args=(documento.arquivo,),
-                )
 
 
 def _mostrar_recentes(turnos: list[tuple[str, Resposta]], em_chat: bool) -> None:
-    """Lista "Recentes": cada pergunta é um botão que volta ao chat. A última fica destacada."""
-    st.html(rotulo_lista_html(ROTULO_RECENTES))
-    ultima = len(turnos) - 1
-    for indice in range(ultima, -1, -1):
-        st.button(
-            _escapar_markdown(resumir(turnos[indice][0])),
-            key=f"recente_{indice}",
-            type=_tipo_do_botao(em_chat and indice == ultima),
-            width="stretch",
-            on_click=_ir_para_chat,
-        )
+    """Seção "Recentes" da barra lateral. Sem perguntas, não mostra rótulo nem lista.
+
+    Cada pergunta é um botão que volta ao chat. A última fica destacada, só no chat.
+    """
+    if not turnos:
+        return
+    with st.sidebar, st.container(key="lista_conversas"):
+        st.html(rotulo_lista_html(ROTULO_RECENTES))
+        ultima = len(turnos) - 1
+        for indice in range(ultima, -1, -1):
+            st.button(
+                _escapar_markdown(resumir(turnos[indice][0])),
+                key=f"recente_{indice}",
+                type=_tipo_do_botao(em_chat and indice == ultima),
+                width="stretch",
+                on_click=_ir_para_chat,
+            )
 
 
 def _botoes_de_volta(*, com_lista: bool) -> None:
@@ -532,8 +509,8 @@ def main() -> None:
     aberto: str | None = st.session_state.get(CHAVE_DOCUMENTO)
     em_chat = tela == TELA_CHAT
     documentos = _documentos_ou_none()
-    # A conversa e a lista "Recentes" são preenchidas depois do envio, porque o campo e os
-    # cartões só são lidos depois de desenhados. Por isso os blocos são criados antes.
+    # A conversa é preenchida depois do envio, porque o campo e os cartões só são lidos depois
+    # de desenhados. Por isso o bloco é criado antes.
     # `autoscroll` faz a área rolar até a última mensagem a cada envio. Com altura fixa, o
     # Streamlit só liga essa rolagem; a altura que vale é a do CSS (`estilo.py`), que ocupa o
     # espaço que sobra. Por isso o valor de `height` aqui é só o que liga a rolagem.
@@ -545,10 +522,11 @@ def main() -> None:
         if em_chat
         else st.container(key="tela_base")
     )
+    # Ordem da barra: marca, "Nova conversa", "Base de conhecimento" e, por último, "Recentes"
+    # (esta última é desenhada depois do envio, em `_mostrar_recentes`, e vai para o fim).
     with st.sidebar:
         st.html(barra_lateral_html())
-        area_lista = st.container(key="lista_conversas")
-        _mostrar_menu_base(documentos, tela, aberto)
+        _mostrar_menu_base(tela)
     # A entrada (campo e ajuda) é um bloco só, que fica fixo na base depois da primeira pergunta.
     # Nas telas da base ela continua desenhada, mas escondida pelo CSS: assim o campo não é
     # desmontado e o texto já digitado não se perde ao ir e voltar.
@@ -578,9 +556,7 @@ def main() -> None:
     else:
         with area_principal:
             _mostrar_tela_da_base(tela, documentos, aberto)
-    if turnos:
-        with area_lista:
-            _mostrar_recentes(turnos, em_chat)
+    _mostrar_recentes(turnos, em_chat)
 
 
 main()
