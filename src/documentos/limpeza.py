@@ -17,11 +17,19 @@ CABECALHO_PADRAO: Final[re.Pattern[str]] = re.compile(
 )
 """Linha do cabeçalho institucional. O `•` original sai como `\\x7f` no texto do pypdf."""
 
+CABECALHO_MATERIAL_SIMULADO: Final[re.Pattern[str]] = re.compile(
+    r"Documento simulado(?:\s*[|—•\x7f·]|\s+para avaliação técnica).*"
+)
+"""Faixa de identificação do material fictício, repetida no topo das páginas do PSI-004.
+
+Ex.: "Documento simulado | Desafio de Engenheiro(a) de IA Júnior". Não é conteúdo da política.
+"""
+
 RODAPE_PADRAO: Final[re.Pattern[str]] = re.compile(r"Página \d+")
 
-RODAPE_FIM_DO_DOCUMENTO: Final[re.Pattern[str]] = re.compile(
-    r"Fim do documento\s*[\x7f•·]\s*Material simulado para avaliação técnica.*"
-)
+RODAPE_FIM_DO_DOCUMENTO: Final[re.Pattern[str]] = re.compile(r"Fim do documento\b.*")
+"""Linha de encerramento. O separador e o texto variam entre PDFs (`•` no FIN-POL-001 e
+`—` no PSI-004), então o padrão só fixa o início da linha."""
 
 TITULO_NUMERADO: Final[re.Pattern[str]] = re.compile(r"\d+(?:\.\d+)*\.?\s+[A-ZÀ-Ý]")
 """Início de título numerado (`3. Despesas`, `3.1 Transporte`).
@@ -46,8 +54,9 @@ _SEPARADOR_DE_BLOCO: Final[str] = " "
 
 
 def remover_cabecalho(texto: str) -> str:
-    """Remove as linhas do cabeçalho institucional."""
-    return _remover_linhas(texto, CABECALHO_PADRAO)
+    """Remove as linhas do cabeçalho institucional e a faixa de identificação do material."""
+    sem_institucional = _remover_linhas(texto, CABECALHO_PADRAO)
+    return _remover_linhas(sem_institucional, CABECALHO_MATERIAL_SIMULADO)
 
 
 def remover_rodape(texto: str) -> str:

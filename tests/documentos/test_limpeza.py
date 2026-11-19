@@ -111,6 +111,31 @@ def test_rodape_nao_remove_pagina_citada_no_meio_do_texto() -> None:
     assert remover_rodape(texto) == texto
 
 
+@pytest.mark.parametrize(
+    "linha_material",
+    [
+        "Documento simulado | Desafio de Engenheiro(a) de IA Júnior",
+        "Documento simulado para avaliação técnica — Desafio de Engenheiro(a) de IA Júnior",
+    ],
+)
+def test_remove_faixa_de_identificacao_do_material_simulado(linha_material: str) -> None:
+    texto = f"{linha_material}\n1. Objetivo"
+
+    assert remover_cabecalho(texto) == "1. Objetivo"
+
+
+def test_faixa_do_material_nao_remove_frase_que_apenas_cita_o_termo() -> None:
+    texto = "Documento simulado é um termo usado no corpo da política."
+
+    assert remover_cabecalho(texto) == texto
+
+
+def test_rodape_de_encerramento_com_travessao_e_removido() -> None:
+    texto = "Corpo\nFim do documento — PSI-004 — Material fictício para avaliação técnica."
+
+    assert remover_rodape(texto) == "Corpo"
+
+
 def test_normalizar_espacos_colapsa_espacos_e_apaga_linhas_vazias() -> None:
     texto = "  a   b\t c  \n\n   d \n"
 

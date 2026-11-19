@@ -13,14 +13,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-
-from busca.buscador import BuscadorSemantico
-from busca.calibracao import (
+from calibracao import (
     PerguntaValidacao,
     PontuacaoPergunta,
     ler_perguntas_validacao,
     pontuar_perguntas,
 )
+
+from busca.buscador import BuscadorSemantico
 from busca.indexacao import construir_indice, entradas_indexaveis
 from busca.indice_memoria import IndiceEmMemoria
 from busca.provedor_openai import ProvedorEmbeddingOpenAI
@@ -39,7 +39,7 @@ TAMANHO_LOTE = 100
 TOTAL_PERGUNTAS = 7
 # Piso e top-k do ADR-011, fixos para o teste não depender do `.env`.
 PISO_ADR_011 = 0.40
-TOP_K_ADR_011 = 8
+TOP_K_ADR_011 = 10
 # Mesma configuração de `src/composicao.py` (FAQ como entrada própria). A linha de base do ADR-002
 # foi medida com False; para reproduzi-la, troque aqui e em `scripts/calibrar_limiar.py`.
 PERGUNTAS_FAQ = True

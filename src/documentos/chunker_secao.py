@@ -22,8 +22,8 @@ from documentos.regras_chunking import (
     RE_CABECALHO_SUBSECAO,
     TAMANHO_MAXIMO_CHUNK,
     TERMINADOR_PERGUNTA,
-    TITULO_FAQ,
     TITULOS_EXCECAO,
+    TITULOS_FAQ,
 )
 from nucleo.erros import ConfiguracaoInvalida
 from nucleo.modelos import Secao
@@ -284,7 +284,7 @@ def _e_excecao(secao: _Secao) -> bool:
 
 
 def _e_faq(secao: _Secao) -> bool:
-    return _normalizar_titulo(secao.titulo) == _normalizar_titulo(TITULO_FAQ)
+    return _normalizar_titulo(secao.titulo) in {_normalizar_titulo(t) for t in TITULOS_FAQ}
 
 
 def _normalizar_titulo(titulo: str) -> str:

@@ -36,8 +36,15 @@ A comparação ignora maiúsculas e minúsculas. FIN-POL-001 tem a seção 4 e F
 seção 6. Cada uma é uma regra de negócio que não pode ser cortada no meio.
 """
 
-TITULO_FAQ: Final[str] = "Perguntas frequentes e interpretações"
-"""Seção cujo corpo é uma sequência de pares pergunta e resposta (seções 11 e 12 do corpus)."""
+TITULOS_FAQ: Final[tuple[str, ...]] = (
+    "Perguntas frequentes e interpretações",
+    "Perguntas frequentes",
+)
+"""Seções cujo corpo é uma sequência de pares pergunta e resposta.
+
+A primeira forma é das seções 11 e 12 do corpus de políticas; a segunda é da seção 14 do
+PSI-004. A comparação ignora maiúsculas e minúsculas, como em `TITULOS_EXCECAO`.
+"""
 
 MAXIMO_CARACTERES_TITULO: Final[int] = 120
 """Linha com mais caracteres que isso não é título de seção, mesmo que comece com número.

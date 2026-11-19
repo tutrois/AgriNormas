@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Final
 
 import pytest
 
@@ -218,3 +219,132 @@ def test_codigo_depois_de_paragrafo_longo_nao_e_lido_como_tabela() -> None:
         extrair_metadados(texto, CAMINHO_FICTICIO)
 
     assert "'codigo'" in str(info.value)
+
+
+# Layout sem tabela (PSI-004): a identificação numa linha só, dentro de um parágrafo, e o
+# título em duas linhas acima dela, com a faixa "Documento simulado" entre elas.
+PDF_PSI_004: Final[str] = "Politica_Seguranca_Informacao.pdf"
+
+TEXTO_PSI_004 = (
+    "Documento simulado | Desafio de Engenheiro(a) de IA Júnior\n"
+    "Página 1\n"
+    "POLÍTICA DE USO DE RECURSOS DE TI E\n"
+    "SEGURANÇA DA INFORMAÇÃO\n"
+    "Documento simulado para avaliação técnica — Desafio de Engenheiro(a) de IA Júnior\n"
+    "Identificação: PSI-004    Versão: 1.0    Vigência fictícia: 01/01/2026\n"
+    "Importante: material fictício, criado exclusivamente para o processo seletivo.\n"
+    "1. Objetivo e abrangência\n"
+    "Estabelecer diretrizes para o uso seguro e responsável dos recursos de tecnologia.\n"
+)
+
+PSI_004_ESPERADO = MetadadosDocumento(
+    codigo="PSI-004",
+    titulo="POLÍTICA DE USO DE RECURSOS DE TI E SEGURANÇA DA INFORMAÇÃO",
+    versao=VERSAO_ESPERADA,
+    data_emissao="01/01/2026",
+)
+
+
+def test_pdf_psi_004_le_codigo_versao_titulo_em_duas_linhas_e_data_de_vigencia() -> None:
+    assert ler_metadados(PASTA_BASE / PDF_PSI_004) == PSI_004_ESPERADO
+
+
+def test_identificacao_em_linha_unica_e_aceita() -> None:
+    assert extrair_metadados(TEXTO_PSI_004, CAMINHO_FICTICIO) == PSI_004_ESPERADO
+
+
+@pytest.mark.parametrize("codigo", ["PSI-004", "ABC-123", "FIN-POL-001"])
+def test_codigo_de_um_ou_dois_segmentos_com_tres_digitos_e_aceito_na_linha_unica(
+    codigo: str,
+) -> None:
+    texto = TEXTO_PSI_004.replace("PSI-004", codigo)
+
+    assert extrair_metadados(texto, CAMINHO_FICTICIO).codigo == codigo
+
+
+def test_codigo_de_um_segmento_tambem_e_aceito_na_tabela() -> None:
+    texto = TEXTO_PRIMEIRA_PAGINA.replace("FIN-POL-001", "ABC-123")
+
+    assert extrair_metadados(texto, CAMINHO_FICTICIO).codigo == "ABC-123"
+
+
+@pytest.mark.parametrize(
+    "codigo_invalido",
+    ["PSI-4", "PSI-0004", "PSI-POLITICA-004", "FIN-POL-POL-001", "psi-004"],
+)
+def test_codigo_fora_dos_dois_formatos_e_rejeitado_na_linha_unica(codigo_invalido: str) -> None:
+    texto = TEXTO_PSI_004.replace("PSI-004", codigo_invalido)
+
+    with pytest.raises(ErroDocumento) as info:
+        extrair_metadados(texto, CAMINHO_FICTICIO)
+
+    assert "'codigo'" in str(info.value)
+    assert str(CAMINHO_FICTICIO) in str(info.value)
+
+
+def test_mensagem_de_codigo_fora_do_padrao_cita_os_dois_formatos() -> None:
+    texto = TEXTO_PRIMEIRA_PAGINA.replace("FIN-POL-001\n", "FIN-POL-1\n", 1)
+
+    with pytest.raises(ErroDocumento) as info:
+        extrair_metadados(texto, CAMINHO_FICTICIO)
+
+    assert "XXX-000 ou XXX-YYY-000" in str(info.value)
+
+
+def test_versao_ausente_na_linha_unica_e_rejeitada() -> None:
+    texto = TEXTO_PSI_004.replace("Versão: 1.0    ", "")
+
+    with pytest.raises(ErroDocumento) as info:
+        extrair_metadados(texto, CAMINHO_FICTICIO)
+
+    assert "'versao'" in str(info.value)
+    assert str(CAMINHO_FICTICIO) in str(info.value)
+
+
+def test_codigo_ausente_na_linha_unica_e_rejeitado() -> None:
+    texto = TEXTO_PSI_004.replace("PSI-004", "")
+
+    with pytest.raises(ErroDocumento) as info:
+        extrair_metadados(texto, CAMINHO_FICTICIO)
+
+    assert "'codigo'" in str(info.value)
+
+
+def test_data_ausente_na_linha_unica_e_rejeitada() -> None:
+    texto = TEXTO_PSI_004.replace("01/01/2026", "")
+
+    with pytest.raises(ErroDocumento) as info:
+        extrair_metadados(texto, CAMINHO_FICTICIO)
+
+    assert "'data'" in str(info.value)
+
+
+def test_linha_unica_sem_titulo_em_caixa_alta_e_rejeitada() -> None:
+    texto = TEXTO_PSI_004.replace("POLÍTICA DE USO DE RECURSOS DE TI E\n", "").replace(
+        "SEGURANÇA DA INFORMAÇÃO\n", ""
+    )
+
+    with pytest.raises(ErroDocumento) as info:
+        extrair_metadados(texto, CAMINHO_FICTICIO)
+
+    assert "'titulo'" in str(info.value)
+
+
+def test_texto_sem_tabela_nem_linha_de_identificacao_levanta_erro_com_caminho() -> None:
+    texto = TEXTO_PSI_004.replace(
+        "Identificação: PSI-004    Versão: 1.0    Vigência fictícia: 01/01/2026\n", ""
+    )
+
+    with pytest.raises(ErroDocumento) as info:
+        extrair_metadados(texto, CAMINHO_FICTICIO)
+
+    assert str(CAMINHO_FICTICIO) in str(info.value)
+
+
+def test_tabela_tem_prioridade_sobre_linha_de_identificacao() -> None:
+    texto = (
+        TEXTO_PRIMEIRA_PAGINA
+        + "Identificação: PSI-004    Versão: 2.0    Vigência fictícia: 01/01/2026\n"
+    )
+
+    assert extrair_metadados(texto, CAMINHO_FICTICIO).codigo == "FIN-POL-001"

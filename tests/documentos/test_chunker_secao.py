@@ -427,3 +427,51 @@ def test_faq_com_pergunta_longa_nao_e_dividida_por_tamanho() -> None:
     assert len(secoes) == 1
     assert "Pergunta?" in secoes[0].texto
     assert resposta.strip() in secoes[0].texto
+
+
+POLITICA_SEGURANCA: Final[str] = "Politica_Seguranca_Informacao.pdf"
+"""PSI-004: layout sem tabela, FAQ com título "Perguntas frequentes" e rodapé com travessão."""
+
+
+def test_psi_004_tem_treze_secoes_normais_e_sete_pares_de_faq() -> None:
+    tipos = [(secao.numero, secao.tipo) for secao in _secoes(POLITICA_SEGURANCA)]
+
+    assert [numero for numero, tipo in tipos if tipo == "normal"] == [str(i) for i in range(1, 14)]
+    assert [numero for numero, tipo in tipos if tipo == "faq"] == [f"faq-{i}" for i in range(1, 8)]
+
+
+def test_psi_004_cada_par_de_faq_tem_a_pergunta_e_a_resposta_no_mesmo_chunk() -> None:
+    faq = _secao_por_numero(_secoes(POLITICA_SEGURANCA), "faq-1")
+
+    assert faq.texto.splitlines()[0] == "14. Perguntas frequentes"
+    assert "Posso enviar um relatório interno para meu e-mail pessoal" in faq.texto
+    assert "Não. O envio de documentos corporativos para contas pessoais é proibido." in faq.texto
+
+
+def test_psi_004_nenhum_chunk_vazio_e_nenhum_repetido() -> None:
+    secoes = _secoes(POLITICA_SEGURANCA)
+
+    assert all(secao.texto.strip() for secao in secoes)
+    assert len({secao.texto for secao in secoes}) == len(secoes)
+    assert len({secao.numero for secao in secoes}) == len(secoes)
+
+
+def test_psi_004_chunks_nao_trazem_faixa_do_material_nem_encerramento_nem_numeracao() -> None:
+    texto = "\n".join(secao.texto for secao in _secoes(POLITICA_SEGURANCA))
+
+    assert "Documento simulado" not in texto
+    assert "Fim do documento" not in texto
+    assert "Página " not in texto
+
+
+def test_psi_004_texto_dos_chunks_cobre_o_texto_limpo_a_partir_da_secao_1() -> None:
+    _, a_partir_da_secao_1 = _separar_preambulo(POLITICA_SEGURANCA)
+
+    assert _cobre_em_ordem(a_partir_da_secao_1, _secoes(POLITICA_SEGURANCA))
+
+
+def test_psi_004_chunking_e_determinista() -> None:
+    primeira = ChunkerPorSecao().dividir(_codigo(POLITICA_SEGURANCA), _pares(POLITICA_SEGURANCA))
+    segunda = ChunkerPorSecao().dividir(_codigo(POLITICA_SEGURANCA), _pares(POLITICA_SEGURANCA))
+
+    assert primeira == segunda

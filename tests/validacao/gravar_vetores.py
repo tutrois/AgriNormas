@@ -16,8 +16,10 @@ import numpy as np
 
 RAIZ_PROJETO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(RAIZ_PROJETO / "src"))
+sys.path.insert(0, str(RAIZ_PROJETO / "scripts"))
 
-from busca.calibracao import ler_perguntas_validacao  # noqa: E402
+from calibracao import ler_perguntas_validacao  # noqa: E402
+
 from busca.indexacao import entradas_indexaveis  # noqa: E402
 from busca.provedor_openai import ProvedorEmbeddingOpenAI  # noqa: E402
 from composicao import carregar_secoes  # noqa: E402

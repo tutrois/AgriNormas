@@ -14,8 +14,9 @@ from nucleo.modelos import Resposta
 
 PERGUNTA_DOCUMENTOS_REEMBOLSO = "Quais documentos preciso para solicitar reembolso"
 PERGUNTA_DOCUMENTOS_FERIAS = "Quais documentos preciso para solicitar férias?"
+# Home office saiu desta lista: a PSI-004 (Política de uso de recursos de TI) trata de trabalho
+# remoto na seção 8, então a pergunta tem resposta na base e deve ser respondida.
 PERGUNTAS_FORA_DA_BASE: tuple[str, ...] = (
-    "Qual a política de home office da empresa?",
     "Quantos dias de licença maternidade eu tenho?",
     "Qual é o horário de funcionamento do refeitório?",
     "Qual é a capital da França?",
