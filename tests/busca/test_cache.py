@@ -500,3 +500,63 @@ def test_sem_textos_novos_cache_de_outra_dimensao_so_falha_na_consulta_m29(tmp_p
     assert provedor.chamadas == 0
     with pytest.raises(ErroBusca):
         indice.buscar((1.0, 2.0, 3.0, 4.0, 5.0), 1)
+
+
+# Perguntas de FAQ no cache (entrada extra por par de FAQ)
+
+
+def _faq(numero: str, pergunta: str) -> Secao:
+    return Secao(
+        documento="FIN-POL-001",
+        numero=f"faq-{numero}",
+        titulo=pergunta,
+        texto=f"{pergunta}\nResposta de teste.",
+        tipo="faq",
+    )
+
+
+def test_perguntas_de_faq_entram_no_cache_com_o_proprio_hash(tmp_path: Path) -> None:
+    repositorio = _repositorio(tmp_path)
+    pergunta = "Existe um limite fixo?"
+    faq = _faq("1", pergunta)
+    provedor = ProvedorContador()
+
+    indice = construir_indice_com_cache(
+        [faq], provedor, modelo=MODELO, repositorio=repositorio, perguntas_faq=True
+    )
+
+    assert provedor.textos_enviados == [(texto_indexavel(faq), pergunta)]
+    assert repositorio.ler(MODELO) == {
+        hash_texto(texto_indexavel(faq)): _vetor_do_texto(texto_indexavel(faq)),
+        hash_texto(pergunta): _vetor_do_texto(pergunta),
+    }
+    assert indice.buscar(_vetor_do_texto(pergunta), 1)[0].secao == faq
+
+
+def test_segunda_inicializacao_com_perguntas_de_faq_nao_chama_o_provedor(tmp_path: Path) -> None:
+    repositorio = _repositorio(tmp_path)
+    faq = [_faq("1", "Existe um limite fixo?")]
+    construir_indice_com_cache(
+        faq, ProvedorContador(), modelo=MODELO, repositorio=repositorio, perguntas_faq=True
+    )
+    segundo = ProvedorContador()
+
+    construir_indice_com_cache(
+        faq, segundo, modelo=MODELO, repositorio=repositorio, perguntas_faq=True
+    )
+
+    assert segundo.chamadas == 0
+
+
+def test_ligar_perguntas_de_faq_so_pede_ao_provedor_as_perguntas_novas(tmp_path: Path) -> None:
+    repositorio = _repositorio(tmp_path)
+    pergunta = "Existe um limite fixo?"
+    faq = _faq("1", pergunta)
+    construir_indice_com_cache([faq], ProvedorContador(), modelo=MODELO, repositorio=repositorio)
+    provedor = ProvedorContador()
+
+    construir_indice_com_cache(
+        [faq], provedor, modelo=MODELO, repositorio=repositorio, perguntas_faq=True
+    )
+
+    assert provedor.textos_enviados == [(pergunta,)]

@@ -105,6 +105,9 @@ def pontuar_perguntas(
     `vetores_perguntas` segue a ordem de `perguntas`. Usa `total_secoes` como `k` para ter
     o ranking completo, já que a calibração precisa da pontuação do melhor trecho esperado,
     mesmo que ele não esteja entre os primeiros.
+
+    `total_secoes` deve ser o número de entradas do índice. Com perguntas de FAQ, há mais
+    entradas que seções: passe `len(entradas_indexaveis(secoes, perguntas_faq=True))`.
     """
     resultados: list[PontuacaoPergunta] = []
     for pergunta, vetor in zip(perguntas, vetores_perguntas, strict=True):

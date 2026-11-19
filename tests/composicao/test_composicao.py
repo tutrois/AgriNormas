@@ -13,8 +13,8 @@ from pathlib import Path
 import pytest
 
 import composicao
-from busca.cache import RepositorioCacheVetores
-from busca.indexacao import texto_indexavel
+from busca.cache import RepositorioCacheVetores, hash_texto
+from busca.indexacao import entradas_indexaveis
 from busca.indice_memoria import MENSAGEM_DIMENSAO_DIFERENTE_DO_INDICE
 from config import Configuracao, carregar_configuracao
 from nucleo.assistente import AssistenteRAG
@@ -28,7 +28,19 @@ SECOES = (
     Secao(documento="FIN-POL-001", numero="1", titulo="Prazo", texto="Entrega em cinco dias."),
     Secao(documento="FRO-POL-002", numero="2", titulo="Frete", texto="Frete por conta do cliente."),
 )
-TEXTOS_INDEXAVEIS = tuple(texto_indexavel(secao) for secao in SECOES)
+SECOES_COM_FAQ = (
+    *SECOES,
+    Secao(
+        documento="FIN-FAQ-003",
+        numero="3",
+        titulo="Qual é o prazo de entrega?",
+        texto="Pedidos são entregues em até cinco dias úteis.",
+        tipo="faq",
+    ),
+)
+TEXTOS_INDEXAVEIS = tuple(
+    entrada.texto for entrada in entradas_indexaveis(SECOES, perguntas_faq=True)
+)
 
 
 class ProvedorPorDimensao:
@@ -126,7 +138,43 @@ def test_cache_de_outra_dimensao_na_consulta_reconstroi_o_indice_e_responde(
     assert resposta.fontes
     assert provedor.pedidos == [(PERGUNTA,), TEXTOS_INDEXAVEIS, (PERGUNTA,)]
     lidos = RepositorioCacheVetores(caminho_cache).ler(MODELO)
-    assert len(lidos) == len(SECOES)
+    assert len(lidos) == len(entradas_indexaveis(SECOES, perguntas_faq=True))
+    assert {len(vetor) for vetor in lidos.values()} == {5}
+
+
+# Perguntas de FAQ (HIST com perguntas_faq ligado na composição)
+
+
+def test_faq_gera_uma_entrada_extra_com_a_pergunta_no_pedido_inicial(
+    monkeypatch: pytest.MonkeyPatch, caminho_cache: Path
+) -> None:
+    monkeypatch.setattr(composicao, "carregar_secoes", lambda _pasta, _tamanho: SECOES_COM_FAQ)
+    entradas = entradas_indexaveis(SECOES_COM_FAQ, perguntas_faq=True)
+    provedor = ProvedorPorDimensao([3])
+
+    _montar(monkeypatch, provedor)
+
+    assert provedor.pedidos == [tuple(entrada.texto for entrada in entradas)]
+    assert len(entradas) == len(SECOES_COM_FAQ) + 1
+    lidos = RepositorioCacheVetores(caminho_cache).ler(MODELO)
+    assert set(lidos) == {hash_texto(entrada.texto) for entrada in entradas}
+
+
+def test_reconstrucao_com_faq_regrava_o_cache_com_o_hash_de_cada_texto_enviado(
+    monkeypatch: pytest.MonkeyPatch, caminho_cache: Path
+) -> None:
+    monkeypatch.setattr(composicao, "carregar_secoes", lambda _pasta, _tamanho: SECOES_COM_FAQ)
+    entradas = entradas_indexaveis(SECOES_COM_FAQ, perguntas_faq=True)
+    _montar(monkeypatch, ProvedorPorDimensao([3])).responder(PERGUNTA)
+    provedor = ProvedorPorDimensao([5])
+    assistente = _montar(monkeypatch, provedor)
+
+    resposta = assistente.responder(PERGUNTA)
+
+    assert resposta.evidencia_suficiente
+    assert provedor.pedidos[1] == tuple(entrada.texto for entrada in entradas)
+    lidos = RepositorioCacheVetores(caminho_cache).ler(MODELO)
+    assert set(lidos) == {hash_texto(entrada.texto) for entrada in entradas}
     assert {len(vetor) for vetor in lidos.values()} == {5}
 
 

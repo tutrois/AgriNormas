@@ -29,6 +29,13 @@ PASTA_SRC: Final[Path] = RAIZ_PROJETO / "src"
 CAMINHO_PERGUNTAS: Final[Path] = RAIZ_PROJETO / "tests" / "validacao" / "perguntas.md"
 
 TAMANHO_LOTE_EMBEDDINGS: Final[int] = 100
+PERGUNTAS_FAQ: Final[bool] = True
+"""Mesma configuração de `src/composicao.py`: cada par de FAQ ganha uma entrada com a pergunta.
+
+Índice e contagem usam este valor, para que `total_secoes` bata com o número de vetores.
+A linha de base de ADR-002 (55 entradas, uma por seção, sem perguntas de FAQ) foi medida com
+`False`. Para reproduzi-la, troque para `False` aqui e em `tests/integracao/test_calibracao.py`.
+"""
 CODIGO_SAIDA_OK: Final[int] = 0
 CODIGO_SAIDA_FALHA: Final[int] = 1
 SEPARADOR: Final[str] = "=" * 78
@@ -88,7 +95,7 @@ def _linha_tabela(resultado: PontuacaoPergunta, limiar: float) -> str:
 def main() -> int:
     """Imprime a tabela de pontuações e devolve o código de saída."""
     from busca.calibracao import ler_perguntas_validacao, pontuar_perguntas
-    from busca.indexacao import construir_indice
+    from busca.indexacao import construir_indice, entradas_indexaveis
     from busca.provedor_openai import ProvedorEmbeddingOpenAI
     from config import carregar_configuracao
     from nucleo.erros import ErroAssistente
@@ -106,17 +113,20 @@ def main() -> int:
             tamanho_lote=TAMANHO_LOTE_EMBEDDINGS,
             timeout_segundos=configuracao.timeout_segundos,
         )
-        indice = construir_indice(secoes, provedor)
+        indice = construir_indice(secoes, provedor, perguntas_faq=PERGUNTAS_FAQ)
+        total_entradas = len(entradas_indexaveis(secoes, perguntas_faq=PERGUNTAS_FAQ))
         perguntas = ler_perguntas_validacao(CAMINHO_PERGUNTAS)
         vetores = provedor.gerar(tuple(pergunta.texto for pergunta in perguntas))
-        resultados = pontuar_perguntas(perguntas, vetores, indice, len(secoes))
+        resultados = pontuar_perguntas(perguntas, vetores, indice, total_entradas)
     except ErroAssistente as erro:
         _escrever(f"Falha na calibração: {erro}\n")
         return CODIGO_SAIDA_FALHA
 
     limiar = configuracao.limiar_similaridade
     _escrever(f"{SEPARADOR}\nCalibração do limiar de similaridade\n")
-    _escrever(f"Chunks indexados: {len(secoes)}\n")
+    _escrever(f"Seções: {len(secoes)}. Entradas no índice: {total_entradas}\n")
+    faq = "sim" if PERGUNTAS_FAQ else "não"
+    _escrever(f"Perguntas de FAQ indexadas como entrada própria: {faq}\n")
     _escrever(f"Limiar configurado (LIMIAR_SIMILARIDADE): {limiar:.4f}\n")
     _escrever(f"Modelo de embedding: {configuracao.modelo_embedding}\n{SEPARADOR}\n")
     _escrever(
