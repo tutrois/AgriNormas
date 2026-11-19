@@ -13,6 +13,7 @@ from interface.marcacao import (
     barra_lateral_html,
     boas_vindas_html,
     lista_conversas_html,
+    remover_citacoes,
 )
 
 CARGA_HOSTIL = '<img src=x onerror="alert(1)"> & <a href="http://exemplo.invalido">x</a>'
@@ -119,3 +120,48 @@ def test_ajuda_do_campo_escapa_o_texto() -> None:
     bloco = ajuda_html("<b>ajuda</b>")
 
     assert bloco == '<p class="agri-ajuda">&lt;b&gt;ajuda&lt;/b&gt;</p>'
+
+
+def test_remove_varias_citacoes_inclusive_coladas() -> None:
+    texto = (
+        "Vale para atividade profissional [FIN-POL-001 §1]. Exige nota "
+        "[FIN-POL-001 §3.1][FIN-POL-001 §3.2] e prazo [FIN-POL-001 §6]."
+    )
+
+    assert remover_citacoes(texto) == ("Vale para atividade profissional. Exige nota e prazo.")
+
+
+def test_remove_citacao_separada_por_espaco_e_antes_de_pontuacao() -> None:
+    assert remover_citacoes("Sim [A-1 §2] [B-2 §3], ok.") == "Sim, ok."
+    assert remover_citacoes("Fim [A-1 §2].") == "Fim."
+    assert remover_citacoes("Um [A-1 §2]; dois") == "Um; dois"
+
+
+def test_remove_secao_com_ponto_e_faq() -> None:
+    assert remover_citacoes("Regra [FIN-POL-001 §3.1] e [FIN-FAQ-001 §faq-5].") == "Regra e."
+
+
+def test_citacao_no_meio_deixa_um_unico_espaco() -> None:
+    assert remover_citacoes("antes [A-1 §2] depois") == "antes depois"
+
+
+def test_nao_remove_colchetes_que_nao_sao_citacao() -> None:
+    texto = "Veja [anexo] e [1] e [A-1 seção 2] e [§3]."
+
+    assert remover_citacoes(texto) == texto
+
+
+def test_texto_sem_citacao_fica_igual_e_quebras_de_linha_ficam() -> None:
+    assert remover_citacoes("Linha um.\nLinha dois.") == "Linha um.\nLinha dois."
+    assert remover_citacoes("a [A-1 §2]\nb") == "a\nb"
+
+
+def test_texto_so_com_citacao_mantem_o_original() -> None:
+    assert remover_citacoes("[FIN-POL-001 §1]") == "[FIN-POL-001 §1]"
+
+
+def test_chips_tem_rotulo_para_leitor_de_tela() -> None:
+    bloco = balao_assistente_html("Assistente", "Texto", chips=["FIN-POL-001 · 1"])
+
+    assert "Fontes:" in bloco
+    assert "agri-so-leitor" in bloco.split("agri-chips")[1]

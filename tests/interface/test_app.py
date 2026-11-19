@@ -315,6 +315,24 @@ def test_texto_da_resposta_nao_vira_link_nem_imagem(montagens: Montagens) -> Non
     assert not any("](" in bloco or "![" in bloco for bloco in blocos_markdown)
 
 
+def test_resposta_nao_mostra_citacoes_inline_e_mantem_os_chips(montagens: Montagens) -> None:
+    montagens.assistente.texto = (
+        "Vale para atividade profissional [FIN-POL-001 §1]. "
+        "Exige nota [FIN-POL-001 §3.1][FIN-POL-001 §3.2]."
+    )
+
+    at = _perguntar(_abrir(), "Como funciona o reembolso de despesas?")
+
+    assert not at.exception
+    assert _respostas_em_html(at) == [
+        f'<div class="{CLASSE_RESPOSTA}">Vale para atividade profissional. Exige nota.</div>'
+    ]
+    pagina = _html_da_pagina(at)
+    assert "§" not in "".join(_respostas_em_html(at))
+    assert '<span class="agri-chip">FIN-POL-001 · 3.1</span>' in pagina
+    assert [expansor.label for expansor in at.expander] == [ROTULO_EXPANSOR]
+
+
 def test_recusa_mostra_o_texto_do_nucleo_literal_e_sem_markdown(montagens: Montagens) -> None:
     # A recusa vai para um balão de texto puro (HTML escapado), e não para `st.info` com Markdown.
     # Por isso o texto chega como foi escrito: nada é interpretado, nem escapado com barra.

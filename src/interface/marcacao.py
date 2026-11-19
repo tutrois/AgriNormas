@@ -9,6 +9,7 @@ sobre a resposta.
 from __future__ import annotations
 
 import html
+import re
 from collections.abc import Iterable, Sequence
 from typing import Final
 
@@ -17,6 +18,33 @@ from interface.estilo import TEXTO_MARCA
 CLASSE_RESPOSTA: Final[str] = "agrinormas-resposta"
 ROTULO_NOVA_CONVERSA: Final[str] = "Nova conversa"
 DESTINO_NOVA_CONVERSA: Final[str] = "./"
+ROTULO_CHIPS_LEITOR: Final[str] = "Fontes:"
+
+# Citação do núcleo: `[FIN-POL-001 §3.1]`, `[FIN-POL-001 §faq-5]`. Outros colchetes não casam.
+_CITACAO: Final[str] = r"\[[A-Za-z0-9][A-Za-z0-9_-]*\s*§\s*[A-Za-z0-9][A-Za-z0-9._-]*\]"
+_SEQUENCIA_CITACOES: Final[re.Pattern[str]] = re.compile(rf"[ 	]*(?:{_CITACAO}[ 	]*)+")
+_ESPACOS_REPETIDOS: Final[re.Pattern[str]] = re.compile(r"(?<=\S)[ 	]{2,}")
+_ESPACO_NO_FIM_DA_LINHA: Final[re.Pattern[str]] = re.compile(r"[ 	]+$", re.MULTILINE)
+
+
+def remover_citacoes(texto: str) -> str:
+    """Tira do texto as citações `[CÓDIGO §SEÇÃO]`, só para exibição.
+
+    Os chips de fontes são a referência visível. Cuida do espaçamento: sem espaço duplo, sem
+    espaço antes de pontuação e sem espaço sobrando no fim. Se nada sobrar, devolve o original.
+    """
+
+    def _substituir(achado: re.Match[str]) -> str:
+        depois = texto[achado.end() : achado.end() + 1]
+        antes = texto[: achado.start()]
+        if not antes.strip() or not depois or depois in ".,;:!?)" or depois.isspace():
+            return ""
+        return " "
+
+    limpo = _SEQUENCIA_CITACOES.sub(_substituir, texto)
+    limpo = _ESPACOS_REPETIDOS.sub(" ", limpo)
+    limpo = _ESPACO_NO_FIM_DA_LINHA.sub("", limpo).strip()
+    return limpo or texto
 
 
 def _avatar(variante: str) -> str:
@@ -118,7 +146,8 @@ def balao_assistente_html(
     """
     marca = f'<span class="agri-selo-sem-evidencia">{html.escape(selo)}</span>' if selo else ""
     lista = "".join(f'<span class="agri-chip">{html.escape(chip)}</span>' for chip in chips)
-    fontes = f'<div class="agri-chips">{lista}</div>' if lista else ""
+    rotulo_fontes = f'<span class="agri-so-leitor">{html.escape(ROTULO_CHIPS_LEITOR)}</span>'
+    fontes = f'<div class="agri-chips">{rotulo_fontes}{lista}</div>' if lista else ""
     return (
         '<div class="agri-linha agri-linha-assistente">'
         f"{_avatar('assistente')}"

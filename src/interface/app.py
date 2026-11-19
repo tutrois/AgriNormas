@@ -48,6 +48,7 @@ from interface.marcacao import (  # noqa: E402
     barra_lateral_html,
     boas_vindas_html,
     lista_conversas_html,
+    remover_citacoes,
     rotulo_sugestoes_html,
     titulo_para_leitor_html,
 )
@@ -195,7 +196,7 @@ def _mostrar_conversa(indice: int, pergunta: str, resposta: Resposta) -> None:
         st.html(balao_assistente_html(ROTULO_ASSISTENTE, resposta.texto, ROTULO_SEM_EVIDENCIA))
         return
     chips = tuple(_resumo_fonte(fonte) for fonte in resposta.fontes)
-    st.html(balao_assistente_html(ROTULO_ASSISTENTE, resposta.texto, chips=chips))
+    st.html(balao_assistente_html(ROTULO_ASSISTENTE, remover_citacoes(resposta.texto), chips=chips))
     _mostrar_fontes(resposta.fontes, indice)
 
 
