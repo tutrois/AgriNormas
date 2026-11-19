@@ -434,3 +434,9 @@ def test_f_string_nao_exibe_a_chave() -> None:
     configuracao = carregar_configuracao(AMBIENTE_MINIMO)
 
     assert CHAVE_FALSA not in f"{configuracao!r} {configuracao}"
+
+
+def test_chunker_usa_o_mesmo_padrao_de_tamanho_da_configuracao() -> None:
+    from documentos.regras_chunking import TAMANHO_MAXIMO_CHUNK
+
+    assert TAMANHO_MAXIMO_CHUNK == PADRAO_TAMANHO_MAXIMO_CHUNK

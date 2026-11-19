@@ -85,14 +85,24 @@ def carregar_configuracao(
             NUMERO_REFORMULACOES_MAXIMO,
         ),
         pasta_documentos=_pasta_documentos(valores),
-        tamanho_maximo_chunk=_inteiro_entre(
-            valores,
-            "TAMANHO_MAXIMO_CHUNK",
-            PADRAO_TAMANHO_MAXIMO_CHUNK,
-            TAMANHO_CHUNK_MINIMO,
-            TAMANHO_CHUNK_MAXIMO,
-        ),
+        tamanho_maximo_chunk=_tamanho_maximo_chunk(valores),
         timeout_segundos=_decimal_positivo(valores, "TIMEOUT_SEGUNDOS", PADRAO_TIMEOUT_SEGUNDOS),
+    )
+
+
+def configuracao_dos_documentos(caminho_env: Path | None = None) -> tuple[Path, int]:
+    """Pasta dos documentos e tamanho máximo do chunk, sem exigir a chave da API."""
+    valores = _ambiente_do_processo(caminho_env)
+    return _pasta_documentos(valores), _tamanho_maximo_chunk(valores)
+
+
+def _tamanho_maximo_chunk(valores: Mapping[str, str]) -> int:
+    return _inteiro_entre(
+        valores,
+        "TAMANHO_MAXIMO_CHUNK",
+        PADRAO_TAMANHO_MAXIMO_CHUNK,
+        TAMANHO_CHUNK_MINIMO,
+        TAMANHO_CHUNK_MAXIMO,
     )
 
 

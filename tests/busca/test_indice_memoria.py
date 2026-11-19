@@ -208,9 +208,8 @@ def test_consulta_com_nan_ou_infinito_levanta_erro_sem_alterar_o_indice(
     assert [trecho.secao for trecho in resultados] == [_secao("1")]
 
 
-def test_consulta_com_nan_em_indice_vazio_levanta_erro() -> None:
-    with pytest.raises(ErroBusca):
-        IndiceEmMemoria().buscar((math.nan, 0.0), 1)
+def test_indice_vazio_devolve_vazio_mesmo_com_consulta_invalida() -> None:
+    assert IndiceEmMemoria().buscar((math.nan, 0.0), 1) == ()
 
 
 @pytest.mark.parametrize(

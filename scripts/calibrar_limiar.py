@@ -18,7 +18,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
-    from busca.calibracao import PontuacaoPergunta
+    from calibracao import PontuacaoPergunta
+
     from nucleo.modelos import Secao, Trecho
 
 RAIZ_PROJETO: Final[Path] = Path(__file__).resolve().parents[1]
@@ -103,7 +104,8 @@ def _linha_tabela(resultado: PontuacaoPergunta, piso: float, top_k: int) -> str:
 
 def main() -> int:
     """Imprime a tabela de pontuações e devolve o código de saída."""
-    from busca.calibracao import ler_perguntas_validacao, pontuar_perguntas
+    from calibracao import ler_perguntas_validacao, pontuar_perguntas
+
     from busca.indexacao import construir_indice, entradas_indexaveis
     from busca.provedor_openai import ProvedorEmbeddingOpenAI
     from config import carregar_configuracao

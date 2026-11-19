@@ -26,18 +26,13 @@ from busca.buscador import BuscadorSemantico
 from busca.buscador_formulacoes import BuscadorComFormulacoes
 from busca.cache import EntradaCache, RepositorioCacheVetores, hash_texto
 from busca.indexacao import construir_indice, construir_indice_com_cache, entradas_indexaveis
-from busca.indice_memoria import MENSAGEM_DIMENSAO_DIFERENTE_DO_INDICE
 from busca.provedor_openai import ProvedorEmbeddingOpenAI
 from config import (
     PADRAO_TAMANHO_MAXIMO_CHUNK,
     RAIZ_PROJETO,
-    TAMANHO_CHUNK_MAXIMO,
-    TAMANHO_CHUNK_MINIMO,
     Configuracao,
-    _ambiente_do_processo,
-    _inteiro_entre,
-    _pasta_documentos,
     carregar_configuracao,
+    configuracao_dos_documentos,
 )
 from documentos.chunker_secao import ChunkerPorSecao
 from documentos.leitor_pdf import LeitorPdf
@@ -54,7 +49,7 @@ from nucleo.contratos import (
     ProvedorEmbedding,
     ReescritorConsulta,
 )
-from nucleo.erros import ErroBusca, ErroDocumento
+from nucleo.erros import ErroDimensaoIndice, ErroDocumento
 from nucleo.modelos import Secao, Trecho, Vetor
 
 TAMANHO_LOTE_EMBEDDINGS: Final[int] = 100
@@ -161,7 +156,7 @@ def listar_documentos_do_ambiente() -> tuple[DocumentoDaBase, ...]:
     `carregar_configuracao`, mas não valida a chave. Pasta com valor inválido propaga
     `ConfiguracaoInvalida`.
     """
-    return listar_documentos_da_base(_pasta_documentos(_ambiente_do_processo(None)))
+    return listar_documentos_da_base(configuracao_dos_documentos()[0])
 
 
 def listar_documentos_da_base(pasta: Path) -> tuple[DocumentoDaBase, ...]:
@@ -180,18 +175,8 @@ def ler_documento_do_ambiente(arquivo: str) -> ConteudoDoDocumento | None:
     Usa o mesmo ambiente e a mesma resolução de pasta e de tamanho de chunk de
     `carregar_configuracao`. Veja `ler_documento_da_base` para as regras de `arquivo`.
     """
-    valores = _ambiente_do_processo(None)
-    return ler_documento_da_base(
-        _pasta_documentos(valores),
-        arquivo,
-        tamanho_maximo=_inteiro_entre(
-            valores,
-            "TAMANHO_MAXIMO_CHUNK",
-            PADRAO_TAMANHO_MAXIMO_CHUNK,
-            TAMANHO_CHUNK_MINIMO,
-            TAMANHO_CHUNK_MAXIMO,
-        ),
-    )
+    pasta, tamanho_maximo = configuracao_dos_documentos()
+    return ler_documento_da_base(pasta, arquivo, tamanho_maximo=tamanho_maximo)
 
 
 def ler_documento_da_base(
@@ -347,9 +332,8 @@ class _BuscadorComReconstrucao:
     def buscar(self, pergunta: str) -> tuple[Trecho, ...]:
         try:
             return self._buscador.buscar(pergunta)
-        except ErroBusca as erro:
-            if not _dimensao_divergente(erro):
-                raise
+        except ErroDimensaoIndice:
+            pass
         self._reconstruir()
         return self._buscador.buscar(pergunta)
 
@@ -391,10 +375,6 @@ class _ProvedorCapturador:
     def gerar(self, textos: Sequence[str]) -> tuple[Vetor, ...]:
         self.vetores = self._provedor.gerar(textos)
         return self.vetores
-
-
-def _dimensao_divergente(erro: ErroBusca) -> bool:
-    return str(erro) == MENSAGEM_DIMENSAO_DIFERENTE_DO_INDICE
 
 
 def _entradas_do_cache(

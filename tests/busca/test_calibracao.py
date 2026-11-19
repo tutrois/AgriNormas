@@ -5,13 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
-from busca.calibracao import (
+from calibracao import (
     PerguntaValidacao,
     ReferenciaSecao,
     ler_perguntas_validacao,
     pontuar_perguntas,
 )
+
 from busca.indice_memoria import IndiceEmMemoria
 from nucleo.modelos import Secao, Vetor
 

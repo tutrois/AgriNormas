@@ -13,7 +13,7 @@ from collections.abc import Sequence
 import numpy as np
 from numpy.typing import NDArray
 
-from nucleo.erros import ErroBusca
+from nucleo.erros import ErroBusca, ErroDimensaoIndice
 from nucleo.modelos import Secao, Trecho, Vetor
 
 MENSAGEM_QUANTIDADE_DIVERGENTE = "A quantidade de seções e de vetores não é igual."
@@ -45,7 +45,7 @@ class IndiceEmMemoria:
             self._matriz_normalizada is not None
             and novos_vetores.shape[1] != self._matriz_normalizada.shape[1]
         ):
-            raise ErroBusca(MENSAGEM_DIMENSAO_DIFERENTE_DO_INDICE)
+            raise ErroDimensaoIndice(MENSAGEM_DIMENSAO_DIFERENTE_DO_INDICE)
 
         self._matriz_normalizada = (
             novos_vetores
@@ -56,11 +56,11 @@ class IndiceEmMemoria:
 
     def buscar(self, vetor: Vetor, k: int) -> tuple[Trecho, ...]:
         """Devolve até `k` trechos, do mais para o menos similar. Índice vazio devolve `()`."""
-        consulta = _normalizar_lote((vetor,))[0]
         if self._matriz_normalizada is None:
             return ()
+        consulta = _normalizar_lote((vetor,))[0]
         if consulta.shape[0] != self._matriz_normalizada.shape[1]:
-            raise ErroBusca(MENSAGEM_DIMENSAO_DIFERENTE_DO_INDICE)
+            raise ErroDimensaoIndice(MENSAGEM_DIMENSAO_DIFERENTE_DO_INDICE)
         if k <= 0:
             return ()
 

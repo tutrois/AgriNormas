@@ -17,6 +17,10 @@ class ErroBusca(ErroAssistente):
     """Falha ao gerar embeddings ou consultar o índice."""
 
 
+class ErroDimensaoIndice(ErroBusca):
+    """O vetor tem dimensão diferente da dos vetores já guardados no índice."""
+
+
 class ErroGeracao(ErroAssistente):
     """Falha na chamada ao modelo de linguagem."""
 

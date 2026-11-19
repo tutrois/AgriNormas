@@ -8,8 +8,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from calibracao import PerguntaValidacao, ler_perguntas_validacao
 
-from busca.calibracao import PerguntaValidacao, ler_perguntas_validacao
 from composicao import montar_assistente
 from config import NOME_CHAVE_OPENAI, Configuracao, carregar_configuracao
 from nucleo.assistente import AssistenteRAG
