@@ -228,3 +228,13 @@ def test_campo_fica_na_base_so_depois_da_primeira_pergunta() -> None:
     assert ".st-key-conversa .agri-linha" in CSS_PAGINA
     assert "position: sticky;" in CSS_PAGINA
     assert "margin-top: auto;" in CSS_PAGINA
+
+
+def test_lista_da_base_zera_recuo_e_marcadores_do_navegador() -> None:
+    regra = re.search(r"\.agri-base \.agri-base-lista\s*\{([^}]*)\}", CSS_PAGINA)
+
+    assert regra is not None, "regra da lista da base não encontrada"
+    corpo = regra.group(1)
+    assert "padding: 0 !important" in corpo
+    assert "margin: 0 !important" in corpo
+    assert "list-style: none" in corpo

@@ -8,11 +8,17 @@ A montagem usa o cache de vetores (`busca.cache`) em `CAMINHO_CACHE_VETORES`. Qu
 tem dimensão diferente da do provedor (M-29) e não há textos novos, o erro só aparece na
 consulta. Nesse caso `_BuscadorComReconstrucao` descarta o cache, reconstrói o índice e
 repete a pergunta uma única vez.
+
+A listagem dos documentos da base (`listar_documentos_da_base` e `listar_documentos_do_ambiente`)
+serve ao menu da interface: devolve só código, título e versão de cada PDF, sem a chave da API.
+Um PDF ilegível não derruba a lista; entra com o nome do arquivo como título.
 """
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
@@ -21,7 +27,13 @@ from busca.cache import EntradaCache, RepositorioCacheVetores, hash_texto
 from busca.indexacao import construir_indice, construir_indice_com_cache, entradas_indexaveis
 from busca.indice_memoria import MENSAGEM_DIMENSAO_DIFERENTE_DO_INDICE
 from busca.provedor_openai import ProvedorEmbeddingOpenAI
-from config import RAIZ_PROJETO, Configuracao, carregar_configuracao
+from config import (
+    RAIZ_PROJETO,
+    Configuracao,
+    _ambiente_do_processo,
+    _pasta_documentos,
+    carregar_configuracao,
+)
 from documentos.chunker_secao import ChunkerPorSecao
 from documentos.leitor_pdf import LeitorPdf
 from documentos.limpeza import limpar_paginas
@@ -37,6 +49,22 @@ TAMANHO_LOTE_EMBEDDINGS: Final[int] = 100
 
 CAMINHO_CACHE_VETORES: Final[Path] = RAIZ_PROJETO / "dados" / "indice.npz"
 """Cache dos vetores em disco. Fica em `dados/`, fora do git, e pode ser apagado com segurança."""
+
+_LOG = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class DocumentoDaBase:
+    """Documento da base de conhecimento, como a interface o exibe."""
+
+    arquivo: str
+    """Nome do arquivo, ex.: `Politica_Reembolso.pdf`."""
+    codigo: str
+    """Código do documento, ex.: `FIN-POL-001`. Vazio se o PDF não pôde ser lido."""
+    titulo: str
+    """Título extraído do PDF ou, se ilegível, o nome do arquivo sem extensão."""
+    versao: str
+    """Versão, ex.: `1.0`. Vazia se o PDF não pôde ser lido."""
 
 
 def montar_assistente(configuracao: Configuracao) -> AssistenteRAG:
@@ -85,6 +113,41 @@ def montar_assistente_do_ambiente() -> AssistenteRAG:
     propagam como `ConfiguracaoInvalida`, sem citar valores secretos.
     """
     return montar_assistente(carregar_configuracao())
+
+
+def listar_documentos_do_ambiente() -> tuple[DocumentoDaBase, ...]:
+    """Lista os documentos da pasta configurada em `PASTA_DOCUMENTOS`, sem exigir a chave da API.
+
+    Usa o mesmo ambiente (`.env` e `os.environ`) e a mesma resolução de pasta de
+    `carregar_configuracao`, mas não valida a chave. Pasta com valor inválido propaga
+    `ConfiguracaoInvalida`.
+    """
+    return listar_documentos_da_base(_pasta_documentos(_ambiente_do_processo(None)))
+
+
+def listar_documentos_da_base(pasta: Path) -> tuple[DocumentoDaBase, ...]:
+    """Lê a primeira página de cada PDF da pasta, em ordem de nome, e devolve a identificação.
+
+    Pasta inexistente ou vazia devolve `()`. PDF com erro de leitura ou de metadados entra com
+    o nome do arquivo como título e código e versão vazios; o aviso no log não cita conteúdo.
+    """
+    leitor = LeitorPdf()
+    return tuple(_documento_da_base(caminho, leitor) for caminho in sorted(pasta.glob("*.pdf")))
+
+
+def _documento_da_base(caminho: Path, leitor: LeitorDocumento) -> DocumentoDaBase:
+    try:
+        paginas = leitor.ler(caminho)
+        metadados = extrair_metadados(paginas[0].texto, caminho)
+    except ErroDocumento, IndexError:
+        _LOG.warning("Não foi possível ler os metadados de um documento da base.")
+        return DocumentoDaBase(arquivo=caminho.name, codigo="", titulo=caminho.stem, versao="")
+    return DocumentoDaBase(
+        arquivo=caminho.name,
+        codigo=metadados.codigo,
+        titulo=metadados.titulo,
+        versao=metadados.versao,
+    )
 
 
 def carregar_secoes(pasta: Path, tamanho_maximo: int) -> tuple[Secao, ...]:

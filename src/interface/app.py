@@ -39,13 +39,18 @@ if str(_PASTA_SRC) not in sys.path:
 
 import streamlit as st  # noqa: E402
 
-from composicao import montar_assistente_do_ambiente  # noqa: E402
+from composicao import (  # noqa: E402
+    DocumentoDaBase,
+    listar_documentos_do_ambiente,
+    montar_assistente_do_ambiente,
+)
 from interface.estilo import CSS_PAGINA  # noqa: E402
 from interface.marcacao import (  # noqa: E402
     ajuda_html,
     balao_assistente_html,
     balao_usuario_html,
     barra_lateral_html,
+    base_conhecimento_html,
     boas_vindas_html,
     lista_conversas_html,
     remover_citacoes,
@@ -73,6 +78,9 @@ ALTURA_CONVERSA_PARA_ROLAGEM: Final[int] = 400
 ROTULO_SUGESTOES: Final[str] = "Perguntas frequentes"
 TITULO_PAGINA_LEITOR: Final[str] = "Perguntas sobre as normas"
 ROTULO_RECENTES: Final[str] = "Recentes"
+ROTULO_BASE: Final[str] = "Base de conhecimento"
+TEXTO_BASE_VAZIA: Final[str] = "Nenhum documento encontrado na base."
+TEXTO_BASE_ERRO: Final[str] = "Não foi possível listar os documentos."
 # Cartões do estado inicial: (título, descrição, pergunta enviada ao clicar). Os títulos e as
 # descrições são os nomes dos três documentos da base; a pergunta é só uma pergunta de partida.
 SUGESTOES: Final[tuple[tuple[str, str, str], ...]] = (
@@ -115,6 +123,22 @@ _CARACTERES_MARKDOWN: Final[dict[int, str]] = str.maketrans(
 def _assistente() -> AssistenteRAG:
     """Monta o assistente uma vez por processo. Erros não ficam em cache e são tentados de novo."""
     return montar_assistente_do_ambiente()
+
+
+@st.cache_data(show_spinner=False)
+def _documentos_da_base() -> tuple[DocumentoDaBase, ...]:
+    """Lê a lista de documentos uma vez por processo. Erros não ficam em cache."""
+    return listar_documentos_do_ambiente()
+
+
+def _documentos_ou_none() -> tuple[DocumentoDaBase, ...] | None:
+    """Lista para a barra lateral. Qualquer falha vira None e não derruba a tela."""
+    try:
+        return _documentos_da_base()
+    except Exception as erro:
+        # Só a classe vai ao log: a mensagem pode conter caminho ou segredo.
+        _LOG.warning("Não foi possível listar os documentos: %s", type(erro).__name__)
+        return None
 
 
 def _escapar_markdown(texto: str) -> str:
@@ -270,6 +294,11 @@ def main() -> None:
     with st.sidebar:
         st.html(barra_lateral_html())
         area_lista = st.container(key="lista_conversas")
+        st.html(
+            base_conhecimento_html(
+                _documentos_ou_none(), ROTULO_BASE, TEXTO_BASE_VAZIA, TEXTO_BASE_ERRO
+            )
+        )
     # A entrada (campo e ajuda) é um bloco só, que fica fixo na base depois da primeira pergunta.
     with st.container(key="entrada"):
         with (

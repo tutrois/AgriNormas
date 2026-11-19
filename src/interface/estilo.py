@@ -292,6 +292,67 @@ _REGRAS_CSS: Final[str] = """
   background: var(--agri-campo-escuro);
   color: #ffffff;
 }
+/* Base de conhecimento: mesma família visual de "Recentes". Itens não são links. Rótulo, contador
+   e itens compartilham o mesmo recuo (4 px) para usar a largura da barra. Cinza #8a8a92 e #d6d6da
+   sobre #0d0d0d passam de 4,5:1. O texto quebra em pontos naturais em vez de ser cortado. */
+.agri-base {
+  margin-top: 20px;
+}
+.agri-base h2.agri-lista-rotulo {
+  margin: 0 0 6px;
+  padding: 0 4px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: normal;
+  color: var(--agri-texto-trilho-suave);
+}
+.agri-base-contagem,
+.agri-base-aviso {
+  margin: 0 0 6px;
+  padding: 0 4px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--agri-texto-trilho-suave);
+}
+/* O Streamlit dá recuo de 32 px às listas dentro de `st.html`; o !important o anula. */
+.agri-base .agri-base-lista {
+  margin: 0 !important;
+  padding: 0 !important;
+  list-style: none !important;
+}
+.agri-base-item {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 4px;
+  overflow-wrap: break-word;
+}
+.agri-base-item + .agri-base-item {
+  margin-top: 4px;
+}
+.agri-base-titulo {
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--agri-texto-trilho);
+}
+.agri-base-meta,
+.agri-base-arquivo {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--agri-texto-trilho-suave);
+}
+/* Código e versão ficam inteiros: se não couberem juntos, a versão desce inteira. */
+.agri-base-meta {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 0.4em;
+}
+.agri-base-meta > span {
+  white-space: nowrap;
+}
 /* A ajuda tem a mesma largura da caixa de pergunta, centralizada abaixo dela. */
 .st-key-ajuda {
   box-sizing: border-box;

@@ -6,11 +6,14 @@ evidência" só aparece quando é pedido.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from interface.marcacao import (
     ajuda_html,
     balao_assistente_html,
     balao_usuario_html,
     barra_lateral_html,
+    base_conhecimento_html,
     boas_vindas_html,
     lista_conversas_html,
     remover_citacoes,
@@ -165,3 +168,73 @@ def test_chips_tem_rotulo_para_leitor_de_tela() -> None:
 
     assert "Fontes:" in bloco
     assert "agri-so-leitor" in bloco.split("agri-chips")[1]
+
+
+@dataclass(frozen=True)
+class _Doc:
+    arquivo: str = "Politica_Reembolso.pdf"
+    codigo: str = "FIN-POL-001"
+    titulo: str = "POLÍTICA DE REEMBOLSO"
+    versao: str = "1.0"
+
+
+def _base(documentos: object) -> str:
+    return base_conhecimento_html(documentos, "Base de conhecimento", "Vazia.", "Erro.")  # type: ignore[arg-type]
+
+
+def test_base_mostra_titulo_em_caixa_de_frase_codigo_versao_e_arquivo() -> None:
+    bloco = _base((_Doc(), _Doc(titulo="Procedimento de Férias", versao="")))
+
+    assert "Política de reembolso" in bloco
+    assert "<span>FIN-POL-001</span> <span>v1.0</span>" in bloco
+    assert "Politica_<wbr>Reembolso.<wbr>pdf" in bloco
+    assert "Procedimento de Férias" in bloco
+    assert "2 documentos" in bloco
+    assert 'aria-labelledby="agri-base-titulo"' in bloco
+
+
+def test_base_usa_singular_para_um_documento() -> None:
+    assert "1 documento<" in _base((_Doc(),))
+
+
+def test_base_escapa_todo_texto_e_nao_cria_link_nem_imagem() -> None:
+    bloco = _base(
+        (_Doc(arquivo=CARGA_HOSTIL, codigo=CARGA_HOSTIL, titulo=CARGA_HOSTIL, versao="1"),)
+    )
+
+    assert CARGA_ESCAPADA in bloco
+    assert "<img" not in bloco
+    assert "<a " not in bloco
+    assert "<script" not in bloco
+
+
+def test_base_com_campos_vazios_nao_cria_linhas_vazias() -> None:
+    bloco = _base((_Doc(codigo="", versao=""),))
+
+    assert "agri-base-meta" not in bloco
+    assert " · " not in bloco
+
+
+def test_base_vazia_e_com_erro_mostram_so_o_aviso() -> None:
+    vazia = _base(())
+    erro = _base(None)
+
+    assert "Vazia." in vazia
+    assert "<li" not in vazia
+    assert "Erro." in erro
+    assert "<li" not in erro
+    assert "documentos<" not in erro
+
+
+def test_base_permite_quebra_no_nome_do_arquivo_sem_quebrar_o_escape() -> None:
+    bloco = _base((_Doc(arquivo="Pol_<b>&x.pdf"),))
+
+    assert "Pol_<wbr>&lt;b&gt;&amp;x.<wbr>pdf" in bloco
+    assert "<b>" not in bloco
+    assert 'Pol_&lt;b&gt;&amp;x.pdf"' in bloco  # a dica (title) guarda o nome completo, escapado
+
+
+def test_base_mantem_codigo_e_versao_em_trechos_que_nao_se_partem() -> None:
+    bloco = _base((_Doc(),))
+
+    assert '<span class="agri-base-meta"><span>FIN-POL-001</span> <span>v1.0</span></span>' in bloco

@@ -11,7 +11,7 @@ from __future__ import annotations
 import html
 import re
 from collections.abc import Iterable, Sequence
-from typing import Final
+from typing import Final, Protocol
 
 from interface.estilo import TEXTO_MARCA
 
@@ -19,6 +19,21 @@ CLASSE_RESPOSTA: Final[str] = "agrinormas-resposta"
 ROTULO_NOVA_CONVERSA: Final[str] = "Nova conversa"
 DESTINO_NOVA_CONVERSA: Final[str] = "./"
 ROTULO_CHIPS_LEITOR: Final[str] = "Fontes:"
+ID_TITULO_BASE: Final[str] = "agri-base-titulo"
+
+
+class DocumentoListado(Protocol):
+    """O que a lista da base precisa de cada documento (satisfeito por `DocumentoDaBase`)."""
+
+    @property
+    def arquivo(self) -> str: ...
+    @property
+    def codigo(self) -> str: ...
+    @property
+    def titulo(self) -> str: ...
+    @property
+    def versao(self) -> str: ...
+
 
 # Citação do núcleo: `[FIN-POL-001 §3.1]`, `[FIN-POL-001 §faq-5]`. Outros colchetes não casam.
 _CITACAO: Final[str] = r"\[[A-Za-z0-9][A-Za-z0-9_-]*\s*§\s*[A-Za-z0-9][A-Za-z0-9._-]*\]"
@@ -88,6 +103,82 @@ def lista_conversas_html(perguntas: Sequence[str], rotulo: str) -> str:
         )
         itens.append(f'<div class="{classe}">{html.escape(_resumir(pergunta))}</div>')
     return f'<p class="agri-lista-rotulo">{html.escape(rotulo)}</p>{"".join(itens)}'
+
+
+def _titulo_legivel(titulo: str) -> str:
+    """Títulos todo em caixa alta (ex.: "POLÍTICA DE REEMBOLSO") viram caixa de frase.
+
+    Títulos que já têm minúsculas ficam como estão, para não estragar siglas e nomes próprios.
+    """
+    limpo = " ".join(titulo.split())
+    if limpo.isupper():
+        limpo = limpo.lower()
+    return limpo[:1].upper() + limpo[1:]
+
+
+def _contagem(quantidade: int) -> str:
+    return "1 documento" if quantidade == 1 else f"{quantidade} documentos"
+
+
+def _com_pontos_de_quebra(texto: str) -> str:
+    """Escapa o texto e permite quebra de linha depois de "_" e ".", sem partir palavras."""
+    escapado = html.escape(texto)
+    return escapado.replace("_", "_<wbr>").replace(".", ".<wbr>")
+
+
+def _meta_da_base(codigo: str, versao: str) -> str:
+    """Código e versão em trechos que não se partem. A versão é prefixada com "v"."""
+    partes = []
+    if codigo:
+        partes.append(html.escape(codigo))
+    if versao:
+        partes.append(html.escape(f"v{versao}"))
+    return " ".join(f"<span>{parte}</span>" for parte in partes)
+
+
+def _item_da_base(documento: DocumentoListado) -> str:
+    titulo = _titulo_legivel(documento.titulo) or documento.arquivo
+    meta = _meta_da_base(documento.codigo, documento.versao)
+    linhas = [f'<span class="agri-base-titulo">{html.escape(titulo)}</span>']
+    if meta:
+        linhas.append(f'<span class="agri-base-meta">{meta}</span>')
+    if documento.arquivo:
+        arquivo = _com_pontos_de_quebra(documento.arquivo)
+        linhas.append(f'<span class="agri-base-arquivo">{arquivo}</span>')
+    # O texto nunca é cortado; a dica (title) repete o conteúdo completo para quem passa o mouse.
+    texto_meta = " · ".join(
+        p for p in (documento.codigo, f"v{documento.versao}" if documento.versao else "") if p
+    )
+    dica = " | ".join(parte for parte in (titulo, texto_meta, documento.arquivo) if parte)
+    return f'<li class="agri-base-item" title="{html.escape(dica)}">{"".join(linhas)}</li>'
+
+
+def base_conhecimento_html(
+    documentos: Sequence[DocumentoListado] | None,
+    rotulo: str,
+    texto_vazio: str,
+    texto_erro: str,
+) -> str:
+    """Seção "Base de conhecimento" da barra lateral: um item por documento, sem links.
+
+    `documentos` é None quando a lista não pôde ser lida (mostra só `texto_erro`, sem detalhes).
+    A seção é uma região nomeada pelo próprio título, para leitores de tela.
+    """
+    cabecalho = f'<h2 id="{ID_TITULO_BASE}" class="agri-lista-rotulo">{html.escape(rotulo)}</h2>'
+    if documentos is None:
+        corpo = f'<p class="agri-base-aviso">{html.escape(texto_erro)}</p>'
+    elif not documentos:
+        corpo = f'<p class="agri-base-aviso">{html.escape(texto_vazio)}</p>'
+    else:
+        itens = "".join(_item_da_base(documento) for documento in documentos)
+        corpo = (
+            f'<p class="agri-base-contagem">{html.escape(_contagem(len(documentos)))}</p>'
+            f'<ul class="agri-base-lista">{itens}</ul>'
+        )
+    return (
+        f'<section class="agri-base" aria-labelledby="{ID_TITULO_BASE}">'
+        f"{cabecalho}{corpo}</section>"
+    )
 
 
 def _resumir(texto: str, limite: int = 40) -> str:

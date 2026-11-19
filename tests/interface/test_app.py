@@ -132,12 +132,51 @@ class GeradorQueNaoDeveRodar:
 @pytest.fixture(autouse=True)
 def cache_limpo() -> Any:
     st.cache_resource.clear()
+    st.cache_data.clear()
     yield
     st.cache_resource.clear()
+    st.cache_data.clear()
+
+
+DOCUMENTOS = (
+    composicao.DocumentoDaBase(
+        "Politica_Reembolso.pdf", "FIN-POL-001", "POLÍTICA DE REEMBOLSO", "1.0"
+    ),
+    composicao.DocumentoDaBase(
+        "Politica_Veiculos.pdf", "FRO-POL-002", "POLÍTICA DE VEÍCULOS", "2.1"
+    ),
+    composicao.DocumentoDaBase(
+        "Procedimento_Ferias.pdf", "RH-PRC-003", "PROCEDIMENTO DE FÉRIAS", ""
+    ),
+)
+MENSAGEM_BASE_VAZIA = "Nenhum documento encontrado na base."
+MENSAGEM_BASE_ERRO = "Não foi possível listar os documentos."
+
+
+class ListagemFalsa:
+    """Dublê de `listar_documentos_do_ambiente`: conta as chamadas e pode falhar."""
+
+    def __init__(self) -> None:
+        self.chamadas = 0
+        self.documentos: tuple[Any, ...] = DOCUMENTOS
+        self.erro: Exception | None = None
+
+    def __call__(self) -> tuple[Any, ...]:
+        self.chamadas += 1
+        if self.erro is not None:
+            raise self.erro
+        return self.documentos
 
 
 @pytest.fixture
-def montagens(monkeypatch: pytest.MonkeyPatch) -> Montagens:
+def listagem(monkeypatch: pytest.MonkeyPatch) -> ListagemFalsa:
+    registro = ListagemFalsa()
+    monkeypatch.setattr(composicao, "listar_documentos_do_ambiente", registro, raising=False)
+    return registro
+
+
+@pytest.fixture
+def montagens(monkeypatch: pytest.MonkeyPatch, listagem: ListagemFalsa) -> Montagens:
     registro = Montagens()
     monkeypatch.setattr(composicao, "montar_assistente_do_ambiente", registro)
     return registro
@@ -498,7 +537,7 @@ def test_autores_aparecem_como_texto_voce_e_assistente(montagens: Montagens) -> 
     at = _perguntar(_abrir(), "Qual é o prazo de entrega?")
 
     assert _autores(at) == [ROTULO_USUARIO, ROTULO_ASSISTENTE]
-    assert "aria-label" not in _html_da_pagina(at)
+    assert 'aria-label="' not in _html_da_pagina(at)
 
 
 def test_sem_evidencia_mostra_selo_em_texto_em_vez_de_erro(montagens: Montagens) -> None:
@@ -688,3 +727,90 @@ def test_pagina_nunca_exibe_a_chave_da_api_em_nenhum_elemento(montagens: Montage
 
     assert CHAVE_DE_TESTE not in _conteudo_da_pagina(at)
     assert "sk-" not in _conteudo_da_pagina(at)
+
+
+def _secao_base(at: AppTest) -> str:
+    html_pagina = _html_da_pagina(at)
+    inicio = html_pagina.find('<section class="agri-base"')
+    assert inicio >= 0, "a seção da base de conhecimento não apareceu"
+    return html_pagina[inicio : html_pagina.find("</section>", inicio)]
+
+
+def test_sidebar_lista_os_tres_documentos_da_base(montagens: Montagens) -> None:
+    at = _abrir()
+
+    secao = _secao_base(at)
+    assert not at.exception
+    assert "Base de conhecimento" in secao
+    assert "3 documentos" in secao
+    assert "Política de reembolso" in secao
+    assert "<span>FIN-POL-001</span> <span>v1.0</span>" in secao
+    assert "Politica_<wbr>Reembolso.<wbr>pdf" in secao
+    assert 'title="Política de reembolso | FIN-POL-001 · v1.0 | Politica_Reembolso.pdf"' in secao
+    assert "<span>RH-PRC-003</span></span>" in secao  # versão vazia: só o código
+    assert secao.count("<li ") == 3
+    assert not _cria_link_ou_imagem(secao)
+
+
+def test_sidebar_escapa_html_hostil_do_documento(
+    montagens: Montagens, listagem: ListagemFalsa
+) -> None:
+    listagem.documentos = (
+        composicao.DocumentoDaBase(
+            "a<b>.pdf", '"><script>x</script>', "<img src=x onerror=1>", "<i>"
+        ),
+    )
+
+    secao = _secao_base(_abrir())
+
+    assert "<img" not in secao
+    assert "<script" not in secao
+    assert "<b>" not in secao
+    assert "&lt;img src=x onerror=1&gt;" in secao
+
+
+def test_sidebar_com_lista_vazia_mostra_aviso(
+    montagens: Montagens, listagem: ListagemFalsa
+) -> None:
+    listagem.documentos = ()
+
+    at = _abrir()
+
+    assert not at.exception
+    assert MENSAGEM_BASE_VAZIA in _secao_base(at)
+
+
+@pytest.mark.parametrize(
+    "erro", [ConfiguracaoInvalida("/segredo/.env sk-123"), RuntimeError("/x/y")]
+)
+def test_erro_ao_listar_nao_derruba_a_tela_nem_vaza_detalhes(
+    montagens: Montagens, listagem: ListagemFalsa, erro: Exception
+) -> None:
+    listagem.erro = erro
+
+    at = _perguntar(_abrir(), "Qual é o prazo de entrega?")
+
+    assert not at.exception
+    assert len(at.error) == 0
+    assert MENSAGEM_BASE_ERRO in _secao_base(at)
+    assert "/segredo" not in _conteudo_da_pagina(at)
+    assert "sk-123" not in _conteudo_da_pagina(at)
+    assert len(_respostas_em_html(at)) == 1
+
+
+def test_lista_da_base_e_lida_uma_vez_apesar_dos_reruns(
+    montagens: Montagens, listagem: ListagemFalsa
+) -> None:
+    at = _abrir()
+    _perguntar(at, "Primeira pergunta?")
+    _perguntar(at, "Segunda pergunta?")
+
+    assert listagem.chamadas == 1
+    assert "3 documentos" in _secao_base(at)
+
+
+def test_secao_da_base_e_uma_regiao_nomeada_pelo_titulo(montagens: Montagens) -> None:
+    secao = _secao_base(_abrir())
+
+    assert 'aria-labelledby="agri-base-titulo"' in secao
+    assert 'id="agri-base-titulo"' in secao
