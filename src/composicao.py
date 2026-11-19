@@ -1,4 +1,4 @@
-"""Composição de dependências (HIST-018, TSK-018.1 e TSK-018.2).
+"""Composição de dependências: único módulo que conhece as implementações concretas.
 
 É o único módulo que conhece as implementações concretas (OpenAI, numpy, pypdf). Monta as
 dependências, carrega e indexa os documentos e devolve o `AssistenteRAG`. Não decide regra
@@ -15,7 +15,10 @@ repete a pergunta uma única vez.
 
 from __future__ import annotations
 
+import logging
+import re
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
@@ -25,7 +28,17 @@ from busca.cache import EntradaCache, RepositorioCacheVetores, hash_texto
 from busca.indexacao import construir_indice, construir_indice_com_cache, entradas_indexaveis
 from busca.indice_memoria import MENSAGEM_DIMENSAO_DIFERENTE_DO_INDICE
 from busca.provedor_openai import ProvedorEmbeddingOpenAI
-from config import RAIZ_PROJETO, Configuracao, carregar_configuracao
+from config import (
+    PADRAO_TAMANHO_MAXIMO_CHUNK,
+    RAIZ_PROJETO,
+    TAMANHO_CHUNK_MAXIMO,
+    TAMANHO_CHUNK_MINIMO,
+    Configuracao,
+    _ambiente_do_processo,
+    _inteiro_entre,
+    _pasta_documentos,
+    carregar_configuracao,
+)
 from documentos.chunker_secao import ChunkerPorSecao
 from documentos.leitor_pdf import LeitorPdf
 from documentos.limpeza import limpar_paginas
@@ -49,6 +62,47 @@ TAMANHO_LOTE_EMBEDDINGS: Final[int] = 100
 
 CAMINHO_CACHE_VETORES: Final[Path] = RAIZ_PROJETO / "dados" / "indice.npz"
 """Cache dos vetores em disco. Fica em `dados/`, fora do git, e pode ser apagado com segurança."""
+
+_LOG = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class DocumentoDaBase:
+    """Documento da base de conhecimento, como a interface o exibe."""
+
+    arquivo: str
+    """Nome do arquivo, ex.: `Politica_Reembolso.pdf`."""
+    codigo: str
+    """Código do documento, ex.: `FIN-POL-001`. Vazio se o PDF não pôde ser lido."""
+    titulo: str
+    """Título extraído do PDF ou, se ilegível, o nome do arquivo sem extensão."""
+    versao: str
+    """Versão, ex.: `1.0`. Vazia se o PDF não pôde ser lido."""
+
+
+@dataclass(frozen=True)
+class SecaoDoDocumento:
+    """Seção de um documento, pronta para exibição."""
+
+    numero: str
+    """Número da seção, ex.: `6`, `3.1` ou `faq-5`."""
+    titulo: str
+    """Título da seção; para FAQ, a pergunta."""
+    texto: str
+    """Corpo da seção, sem as linhas de título que o chunker inclui no começo."""
+    tipo: str
+    """Tipo da seção no chunker, ex.: `normal`, `excecao` ou `faq`."""
+
+
+@dataclass(frozen=True)
+class ConteudoDoDocumento:
+    """Documento da base com o conteúdo dividido em seções."""
+
+    arquivo: str
+    codigo: str
+    titulo: str
+    versao: str
+    secoes: tuple[SecaoDoDocumento, ...]
 
 
 def montar_assistente(configuracao: Configuracao) -> AssistenteRAG:
@@ -100,6 +154,125 @@ def montar_assistente_do_ambiente() -> AssistenteRAG:
     return montar_assistente(carregar_configuracao())
 
 
+def listar_documentos_do_ambiente() -> tuple[DocumentoDaBase, ...]:
+    """Lista os documentos da pasta configurada em `PASTA_DOCUMENTOS`, sem exigir a chave da API.
+
+    Usa o mesmo ambiente (`.env` e `os.environ`) e a mesma resolução de pasta de
+    `carregar_configuracao`, mas não valida a chave. Pasta com valor inválido propaga
+    `ConfiguracaoInvalida`.
+    """
+    return listar_documentos_da_base(_pasta_documentos(_ambiente_do_processo(None)))
+
+
+def listar_documentos_da_base(pasta: Path) -> tuple[DocumentoDaBase, ...]:
+    """Lê a primeira página de cada PDF da pasta, em ordem de nome, e devolve a identificação.
+
+    Pasta inexistente ou vazia devolve `()`. PDF com erro de leitura ou de metadados entra com
+    o nome do arquivo como título e código e versão vazios; o aviso no log não cita conteúdo.
+    """
+    leitor = LeitorPdf()
+    return tuple(_documento_da_base(caminho, leitor) for caminho in sorted(pasta.glob("*.pdf")))
+
+
+def ler_documento_do_ambiente(arquivo: str) -> ConteudoDoDocumento | None:
+    """Lê um documento da pasta configurada em `PASTA_DOCUMENTOS`, sem exigir a chave da API.
+
+    Usa o mesmo ambiente e a mesma resolução de pasta e de tamanho de chunk de
+    `carregar_configuracao`. Veja `ler_documento_da_base` para as regras de `arquivo`.
+    """
+    valores = _ambiente_do_processo(None)
+    return ler_documento_da_base(
+        _pasta_documentos(valores),
+        arquivo,
+        tamanho_maximo=_inteiro_entre(
+            valores,
+            "TAMANHO_MAXIMO_CHUNK",
+            PADRAO_TAMANHO_MAXIMO_CHUNK,
+            TAMANHO_CHUNK_MINIMO,
+            TAMANHO_CHUNK_MAXIMO,
+        ),
+    )
+
+
+def ler_documento_da_base(
+    pasta: Path, arquivo: str, *, tamanho_maximo: int = PADRAO_TAMANHO_MAXIMO_CHUNK
+) -> ConteudoDoDocumento | None:
+    """Devolve o conteúdo do PDF `arquivo` da pasta, dividido nas mesmas seções da busca.
+
+    `arquivo` não é confiável: só é aceito se for exatamente o nome de um `*.pdf` listado
+    diretamente em `pasta`. O caminho lido é o do glob, nunca montado a partir de `arquivo`.
+    Nome inválido, PDF ilegível ou sem seções devolve `None`; o log não cita conteúdo nem caminho.
+    """
+    if not isinstance(arquivo, str):
+        return None
+    caminho = next((c for c in pasta.glob("*.pdf") if c.name == arquivo), None)
+    if caminho is None:
+        return None
+    try:
+        paginas = LeitorPdf().ler(caminho)
+        metadados = extrair_metadados(paginas[0].texto, caminho)
+        secoes = ChunkerPorSecao(tamanho_maximo=tamanho_maximo).dividir(
+            metadados.codigo, limpar_paginas(paginas)
+        )
+    except ErroDocumento, IndexError:
+        _LOG.warning("Não foi possível ler o conteúdo de um documento da base.")
+        return None
+    if not secoes:
+        _LOG.warning("Um documento da base não gerou seções.")
+        return None
+    return ConteudoDoDocumento(
+        arquivo=caminho.name,
+        codigo=metadados.codigo,
+        titulo=metadados.titulo,
+        versao=metadados.versao,
+        secoes=tuple(_secao_do_documento(secao) for secao in secoes),
+    )
+
+
+_CABECALHO_NUMERADO = re.compile(r"^\d+(?:\.\d+)*\.?\s+(?P<resto>\S.*)$")
+
+
+def _secao_do_documento(secao: Secao) -> SecaoDoDocumento:
+    return SecaoDoDocumento(
+        numero=secao.numero,
+        titulo=secao.titulo,
+        texto=_corpo_sem_titulo(secao),
+        tipo=secao.tipo,
+    )
+
+
+def _corpo_sem_titulo(secao: Secao) -> str:
+    """Tira o cabeçalho que o chunker prefixa (seção pai e título); sem essa linha, não altera."""
+    linhas = secao.texto.split("\n")
+    for indice, linha in enumerate(linhas[:3]):
+        if _repete_titulo(linha, secao.titulo):
+            return "\n".join(linhas[indice + 1 :]).strip()
+        if not _CABECALHO_NUMERADO.match(linha):
+            break
+    return secao.texto
+
+
+def _repete_titulo(linha: str, titulo: str) -> bool:
+    casamento = _CABECALHO_NUMERADO.match(linha)
+    candidato = casamento.group("resto") if casamento else linha
+    return candidato.strip() == titulo.strip()
+
+
+def _documento_da_base(caminho: Path, leitor: LeitorDocumento) -> DocumentoDaBase:
+    try:
+        paginas = leitor.ler(caminho)
+        metadados = extrair_metadados(paginas[0].texto, caminho)
+    except ErroDocumento, IndexError:
+        _LOG.warning("Não foi possível ler os metadados de um documento da base.")
+        return DocumentoDaBase(arquivo=caminho.name, codigo="", titulo=caminho.stem, versao="")
+    return DocumentoDaBase(
+        arquivo=caminho.name,
+        codigo=metadados.codigo,
+        titulo=metadados.titulo,
+        versao=metadados.versao,
+    )
+
+
 def carregar_secoes(pasta: Path, tamanho_maximo: int) -> tuple[Secao, ...]:
     """Lê cada PDF da pasta, em ordem de nome, e devolve as seções de todos os documentos."""
     leitor = LeitorPdf()
@@ -113,7 +286,6 @@ def carregar_secoes(pasta: Path, tamanho_maximo: int) -> tuple[Secao, ...]:
 def _secoes_do_documento(
     caminho: Path, leitor: LeitorDocumento, chunker: Chunker
 ) -> Sequence[Secao]:
-    """Lê o PDF, extrai o código da primeira página, limpa o texto e divide em seções."""
     paginas = leitor.ler(caminho)
     codigo = extrair_metadados(paginas[0].texto, caminho).codigo
     return chunker.dividir(codigo, limpar_paginas(paginas))
@@ -141,7 +313,7 @@ def _reescritor(configuracao: Configuracao) -> ReescritorConsulta | None:
 
 
 class _BuscadorComReconstrucao:
-    """Implementa `Buscador` e recalcula o índice quando o cache tem outra dimensão (M-29).
+    """Implementa `Buscador` e reconstrói o índice se o cache tiver outra dimensão.
 
     Só o erro de dimensão do índice dispara a reconstrução. Ela descarta o cache, monta o índice
     de novo com todas as seções, regrava o cache e troca o índice em uso. A pergunta é repetida
@@ -198,10 +370,9 @@ class _BuscadorComReconstrucao:
         )
 
     def _reconstruir(self) -> None:
-        """Descarta o cache, recalcula todos os vetores, regrava o cache e troca o índice.
+        """Recalcula os vetores e troca o índice.
 
-        O cache vazio é gravado antes do pedido ao provedor: se o recálculo falhar, não sobra
-        vetor de dimensão antiga no disco. Se o índice não for montado, o atual segue em uso.
+        O cache vazio é gravado antes: se o recálculo falhar, não sobra vetor de dimensão antiga.
         """
         self._repositorio.gravar(())
         capturador = _ProvedorCapturador(self._provedor)
@@ -229,11 +400,7 @@ def _dimensao_divergente(erro: ErroBusca) -> bool:
 def _entradas_do_cache(
     secoes: Sequence[Secao], vetores: Sequence[Vetor], modelo: str
 ) -> tuple[EntradaCache, ...]:
-    """Uma entrada de cache por vetor, com o hash do texto que foi enviado ao provedor.
-
-    Usa as mesmas entradas de `construir_indice(..., perguntas_faq=True)`, na mesma ordem,
-    para que o hash de cada pergunta de FAQ seja o da própria pergunta.
-    """
+    """Uma entrada por vetor, na mesma ordem de `construir_indice(..., perguntas_faq=True)`."""
     entradas = entradas_indexaveis(secoes, perguntas_faq=True)
     return tuple(
         EntradaCache(hash_texto=hash_texto(entrada.texto), modelo=modelo, vetor=vetor)

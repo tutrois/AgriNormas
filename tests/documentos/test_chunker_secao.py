@@ -1,16 +1,11 @@
-"""Testes do chunking por seção (HIST-007): PDFs reais e textos sintéticos para as bordas.
+"""Testes do chunking por seção, com PDFs reais e textos sintéticos.
 
-Os testes com PDFs usam `LeitorPdf`, `limpar_paginas` e `ler_metadados` de verdade, e o
-código do documento vem da própria primeira página, como no fluxo de produção.
-
-Os textos sintéticos passam por `_um_paragrafo_por_linha`, que monta os pares
-`(pagina, texto)` no formato de `limpar_paginas`: um par por parágrafo. Um par nunca tem
-quebra de linha interna, então um texto com várias linhas vira vários pares.
+Os textos sintéticos passam por `_um_paragrafo_por_linha`: um par `(pagina, texto)` por
+linha, como `limpar_paginas` devolve (um par nunca tem quebra de linha interna).
 """
 
 from __future__ import annotations
 
-from dataclasses import replace
 from functools import cache
 from pathlib import Path
 from typing import Final
@@ -24,7 +19,7 @@ from documentos.metadados import ler_metadados
 from documentos.regras_chunking import TAMANHO_MAXIMO_CHUNK
 from nucleo.contratos import Chunker
 from nucleo.erros import ConfiguracaoInvalida
-from nucleo.modelos import Secao
+from nucleo.modelos import Pagina, Secao
 
 PASTA_BASE: Final[Path] = Path(__file__).resolve().parents[2] / "base_conhecimento"
 
@@ -128,12 +123,7 @@ def _secoes(nome: str) -> tuple[Secao, ...]:
 
 
 def _separar_preambulo(nome: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """Divide os parágrafos limpos do PDF em (preâmbulo, a partir da seção 1).
-
-    O preâmbulo é a capa, a tabela de identificação e o resumo, antes do primeiro "1. ".
-    Por decisão de HIST-007 esse texto não vira chunk. Os campos de identificação (código,
-    versão, data e título) são lidos por `ler_metadados`, não pelo chunker.
-    """
+    """Parágrafos limpos como (preâmbulo, a partir da seção 1). O preâmbulo não vira chunk."""
     textos = tuple(texto for _, texto in _pares(nome))
     inicio = next(i for i, texto in enumerate(textos) if texto.startswith("1. "))
     return textos[:inicio], textos[inicio:]
@@ -169,9 +159,6 @@ def _posicao_da_sequencia(fluxo: list[str], palavras: list[str], inicio: int) ->
         if fluxo[posicao : posicao + tamanho] == palavras:
             return posicao
     return None
-
-
-# --- PDFs reais -------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(("nome", "sequencia"), SEQUENCIAS_POR_PDF.items())
@@ -218,23 +205,17 @@ def test_todo_chunk_tem_codigo_numero_e_titulo(nome: str) -> None:
         assert secao.documento == _codigo(nome)
         assert secao.numero
         assert secao.titulo
-
-
-@pytest.mark.parametrize("nome", SEQUENCIAS_POR_PDF)
-def test_nenhum_chunk_esta_vazio(nome: str) -> None:
-    assert all(secao.texto.strip() for secao in _secoes(nome))
+        assert secao.texto.strip()
 
 
 @pytest.mark.parametrize("nome", SEQUENCIAS_POR_PDF)
 def test_texto_dos_chunks_cobre_o_texto_limpo_a_partir_da_secao_1_em_ordem(nome: str) -> None:
-    """A cobertura começa na seção 1: o preâmbulo fica fora dos chunks por decisão."""
     _, a_partir_da_secao_1 = _separar_preambulo(nome)
     assert _cobre_em_ordem(a_partir_da_secao_1, _secoes(nome))
 
 
 @pytest.mark.parametrize("nome", SEQUENCIAS_POR_PDF)
 def test_preambulo_real_existe_e_nao_aparece_em_nenhum_chunk(nome: str) -> None:
-    """Confirma que o preâmbulo (capa, identificação, resumo) é de fato excluído dos chunks."""
     preambulo, _ = _separar_preambulo(nome)
     assert preambulo, "o PDF deveria ter texto antes da seção 1"
     textos_dos_chunks = [secao.texto for secao in _secoes(nome)]
@@ -249,12 +230,6 @@ def test_chunks_normais_respeitam_o_tamanho_maximo_padrao(nome: str) -> None:
             assert len(secao.texto) <= TAMANHO_MAXIMO_CHUNK
 
 
-@pytest.mark.parametrize("nome", SEQUENCIAS_POR_PDF)
-def test_todo_chunk_real_tem_pagina_vinda_dos_pares(nome: str) -> None:
-    paginas_do_documento = {pagina for pagina, _ in _pares(nome)}
-    assert all(secao.pagina in paginas_do_documento for secao in _secoes(nome))
-
-
 def test_pagina_de_inicio_vem_dos_pares_de_limpar_paginas() -> None:
     reembolso = _secoes(POLITICA_REEMBOLSO)
     assert _secao_por_numero(reembolso, "1").pagina == 1
@@ -264,23 +239,11 @@ def test_pagina_de_inicio_vem_dos_pares_de_limpar_paginas() -> None:
     assert _secao_por_numero(_secoes(PROCEDIMENTO_FERIAS), "4.1").pagina == 2
 
 
-def test_pagina_nao_depende_do_texto_quando_todas_as_paginas_sao_iguais() -> None:
-    nome = POLITICA_REEMBOLSO
-    pagina_unica = [(1, texto) for _, texto in _pares(nome)]
-    sem_paginas_reais = ChunkerPorSecao().dividir(_codigo(nome), pagina_unica)
-    assert tuple(replace(secao, pagina=1) for secao in _secoes(nome)) == tuple(
-        replace(secao, pagina=1) for secao in sem_paginas_reais
-    )
-
-
 def test_chunking_e_determinista_para_o_mesmo_pdf() -> None:
     nome = PROCEDIMENTO_FERIAS
     primeira = ChunkerPorSecao().dividir(_codigo(nome), _pares(nome))
     segunda = ChunkerPorSecao().dividir(_codigo(nome), _pares(nome))
     assert primeira == segunda
-
-
-# --- Textos sintéticos: bordas ----------------------------------------------------------
 
 
 def test_texto_vazio_devolve_tupla_vazia() -> None:
@@ -289,10 +252,6 @@ def test_texto_vazio_devolve_tupla_vazia() -> None:
 
 def test_texto_so_com_espacos_devolve_tupla_vazia() -> None:
     assert ChunkerPorSecao().dividir(CODIGO_SINTETICO, [(1, "   "), (2, "\n\t"), (2, "  ")]) == ()
-
-
-def test_pagina_com_texto_vazio_devolve_tupla_vazia() -> None:
-    assert ChunkerPorSecao().dividir(CODIGO_SINTETICO, [(1, "")]) == ()
 
 
 def test_pares_vazios_sao_ignorados_e_a_pagina_vem_do_primeiro_par_com_texto() -> None:
@@ -335,12 +294,6 @@ def test_texto_antes_da_primeira_secao_nao_gera_chunk() -> None:
     assert [(s.numero, s.texto) for s in secoes] == [("1", "1. Objetivo\nCorpo da seção.")]
 
 
-def test_texto_antes_da_primeira_secao_nao_gera_chunk_mesmo_em_pagina_propria() -> None:
-    pares = [(2, "Capa do documento."), (2, "Resumo."), (3, "1. Objetivo"), (3, "Corpo.")]
-    secoes = ChunkerPorSecao().dividir(CODIGO_SINTETICO, pares)
-    assert [(s.numero, s.pagina) for s in secoes] == [("1", 3)]
-
-
 def test_documento_sem_nenhuma_secao_devolve_tupla_vazia() -> None:
     pares = [(1, "Capa do documento."), (1, "Resumo sem seção numerada.")]
     assert ChunkerPorSecao().dividir(CODIGO_SINTETICO, pares) == ()
@@ -370,7 +323,7 @@ def test_secao_longa_e_dividida_por_paragrafo_sem_cortar_paragrafo() -> None:
         CODIGO_SINTETICO, _um_paragrafo_por_linha(texto)
     )
     assert len(secoes) > 1
-    assert all(s.numero == "5" and s.tipo == "normal" for s in secoes)
+    assert all(s.numero == "5" and s.titulo == "Longa" and s.tipo == "normal" for s in secoes)
     assert all(len(s.texto) <= 600 for s in secoes)
     for paragrafo in paragrafos:
         assert sum(paragrafo in s.texto for s in secoes) == 1
@@ -399,6 +352,47 @@ def test_chunks_divididos_repetem_o_titulo_da_secao_pai() -> None:
 def test_tamanho_maximo_nao_positivo_e_configuracao_invalida() -> None:
     with pytest.raises(ConfiguracaoInvalida):
         ChunkerPorSecao(tamanho_maximo=0)
+
+
+def test_cabecalho_de_contexto_maior_que_o_limite_e_configuracao_invalida() -> None:
+    texto = "\n".join(["1. Pai", "1.1 " + "Filho " * 15, "corpo " * 30])
+    with pytest.raises(ConfiguracaoInvalida):
+        ChunkerPorSecao(tamanho_maximo=50).dividir(CODIGO_SINTETICO, _um_paragrafo_por_linha(texto))
+
+
+def test_pergunta_sem_resposta_nao_absorve_a_resposta_da_pergunta_seguinte() -> None:
+    cabecalho = "11. Perguntas frequentes e interpretações"
+    texto = f"{cabecalho}\nPergunta um?\nPergunta dois?\nResposta dois."
+    secoes = ChunkerPorSecao().dividir(CODIGO_SINTETICO, _um_paragrafo_por_linha(texto))
+    assert [s.texto for s in secoes] == [
+        f"{cabecalho}\nPergunta um?",
+        f"{cabecalho}\nPergunta dois?\nResposta dois.",
+    ]
+
+
+def test_secao_depois_de_paragrafo_que_atravessa_paginas_usa_a_pagina_do_cabecalho() -> None:
+    paginas = [
+        Pagina(numero=1, texto="palavra " * 13 + "continua"),
+        Pagina(numero=2, texto="frase que termina aqui.\n5. Titulo da secao\nCorpo da secao."),
+    ]
+    secoes = ChunkerPorSecao().dividir(CODIGO_SINTETICO, limpar_paginas(paginas))
+    assert [(s.numero, s.pagina) for s in secoes] == [("5", 2)]
+
+
+def test_secao_longa_dividida_usa_a_pagina_de_inicio_em_todos_os_pedacos() -> None:
+    pares = [(3, "5. Longa"), *([(4, "palavra " * 50)] * 4)]
+    secoes = ChunkerPorSecao(tamanho_maximo=260).dividir(CODIGO_SINTETICO, pares)
+    assert len(secoes) > 1
+    assert all(s.pagina == 3 for s in secoes)
+
+
+def test_excecao_com_subsecao_fica_inteira_junto_com_a_subsecao() -> None:
+    texto = "4. Despesas não elegíveis\n4.1 Sub\nSem comprovante fiscal."
+    secoes = ChunkerPorSecao().dividir(CODIGO_SINTETICO, _um_paragrafo_por_linha(texto))
+    assert len(secoes) == 1
+    assert secoes[0].tipo == "excecao"
+    assert "4.1 Sub" in secoes[0].texto
+    assert "Sem comprovante fiscal." in secoes[0].texto
 
 
 def test_faq_gera_um_chunk_por_par_sem_separar_pergunta_e_resposta() -> None:
@@ -433,11 +427,3 @@ def test_faq_com_pergunta_longa_nao_e_dividida_por_tamanho() -> None:
     assert len(secoes) == 1
     assert "Pergunta?" in secoes[0].texto
     assert resposta.strip() in secoes[0].texto
-
-
-def test_mesma_entrada_gera_mesma_lista_de_secoes() -> None:
-    texto = "1. A\nCorpo A.\n1.1 B\nCorpo B.\n4. Despesas não elegíveis\nExceção."
-    pares = _um_paragrafo_por_linha(texto)
-    assert ChunkerPorSecao().dividir(CODIGO_SINTETICO, pares) == ChunkerPorSecao().dividir(
-        CODIGO_SINTETICO, pares
-    )

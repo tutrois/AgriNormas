@@ -1,11 +1,8 @@
-"""Teste de arquitetura (HIST-018, TSK-018.3).
+"""Regras de arquitetura, conferidas pela árvore de imports (`ast`).
 
-Confere, pela árvore de imports (`ast`), duas regras do projeto:
-- `src/nucleo/` não importa bibliotecas externas, nem `openai`, `streamlit`, `pypdf` ou
-  `numpy`, nem `logging`, e não chama `print` (princípio D e Clean Code).
-- Só `src/composicao.py` conhece as implementações concretas. Os pacotes `busca`,
-  `documentos` e `geracao` não são importados por nenhum outro módulo de `src/`, exceto
-  pela composição. Os próprios pacotes de implementação continuam livres entre si.
+`src/nucleo/` só importa biblioteca padrão e ele mesmo, sem `logging` nem `print`. Só
+`src/composicao.py` conhece os pacotes `busca`, `documentos` e `geracao` e as bibliotecas
+`openai`, `numpy` e `pypdf`.
 """
 
 from __future__ import annotations

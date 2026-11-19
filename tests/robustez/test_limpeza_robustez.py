@@ -1,8 +1,5 @@
-"""Casos de borda da limpeza do texto (HIST-005), escritos pelo Tester.
-
-Os testes de funções puras cobrem entradas vazias, só com cabeçalho, só com espaços,
-fronteira de largura e finais de linha do Windows. O rodapé de encerramento "Fim do documento"
-é removido e coberto pelo teste com o Procedimento de Férias.
+"""Casos de borda da limpeza do texto: entradas vazias, só com cabeçalho ou espaços, fronteira de
+largura e finais de linha do Windows.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""Testes do `AssistenteRAG` com dublês de `Buscador` e `GeradorResposta` (HIST-017)."""
+"""Testes do `AssistenteRAG` com dublês de `Buscador` e `GeradorResposta`."""
 
 from collections.abc import Sequence
 

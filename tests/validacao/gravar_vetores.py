@@ -1,17 +1,8 @@
-"""Grava os embeddings reais usados pelo modo offline da suíte de validação (HIST-022).
+"""Grava os embeddings reais do modo offline da suíte de validação em `vetores_gravados.npz`.
 
-O modo offline não chama a API. Ele lê `vetores_gravados.npz`, que este script gera uma vez
-com a chave do `.env`. Consome créditos (um pedido com as seções e as seis perguntas).
-
-Regrave o arquivo quando mudar `tests/validacao/perguntas.md`, a base em `base_conhecimento/`
-ou o modelo de embedding. Se o texto não estiver gravado, o teste offline falha com instrução.
-
-Uso (na raiz do projeto):
-    .venv\\Scripts\\python.exe tests\\validacao\\gravar_vetores.py
-
-Chaves: o SHA-256 do texto enviado ao provedor, exatamente como o `montar_assistente` envia
-(`entradas_indexaveis(..., perguntas_faq=True)` para as seções e títulos de FAQ, e o texto da
-pergunta para as perguntas).
+Consome créditos da API. Regrave quando mudar `perguntas.md`, a base ou o modelo de embedding.
+Uso: `.venv\Scripts\python.exe tests\validacao\gravar_vetores.py`.
+A chave é o SHA-256 do texto enviado ao provedor, igual ao que `montar_assistente` envia.
 """
 
 from __future__ import annotations

@@ -1,7 +1,6 @@
-"""Serviço `AssistenteRAG` (HIST-017): valida a pergunta, busca, gera e filtra as fontes.
+"""Serviço `AssistenteRAG`: valida a pergunta, busca, gera e filtra as fontes (ver ADR-007).
 
 Depende só dos contratos `Buscador` e `GeradorResposta`, recebidos pelo construtor.
-Não sabe o que é OpenAI, numpy nem PDF (ADR-007 para entradas vazias).
 """
 
 from __future__ import annotations
@@ -14,7 +13,7 @@ from nucleo.erros import PerguntaInvalida
 from nucleo.modelos import Fonte, Resposta, Trecho
 
 TAMANHO_MAXIMO_PERGUNTA = 500
-"""Limite de caracteres da pergunta, depois de aparada nas bordas (TSK-017.4)."""
+"""Limite de caracteres da pergunta, depois de aparada nas bordas."""
 
 
 class AssistenteRAG:
@@ -58,12 +57,9 @@ def _validar_pergunta(pergunta: object) -> str:
 
 
 def _resposta_final(resposta: Resposta, trechos: Sequence[Trecho]) -> Resposta:
-    """Aplica as regras de saída sobre a resposta do gerador.
+    """Recusa se o gerador recusou, se o texto veio vazio ou se nenhuma fonte citada foi recuperada.
 
-    - Recusa do gerador (`evidencia_suficiente=False`): devolve `sem_evidencia()`.
-    - Texto vazio: não entrega resposta vazia; devolve `sem_evidencia()`.
-    - Fontes: mantém só as que correspondem a um dos trechos recuperados, sem repetição
-      e na ordem do gerador. Se nenhuma sobrar, devolve `sem_evidencia()`.
+    As fontes citadas pelo modelo não são confiáveis: só valem as dos trechos recuperados.
     """
     if not resposta.evidencia_suficiente or not resposta.texto.strip():
         return Resposta.sem_evidencia()
@@ -74,7 +70,6 @@ def _resposta_final(resposta: Resposta, trechos: Sequence[Trecho]) -> Resposta:
 
 
 def _fontes_dos_trechos(trechos: Sequence[Trecho]) -> frozenset[Fonte]:
-    """Conjunto de fontes que os trechos recuperados sustentam, uma por seção."""
     return frozenset(Fonte.de_secao(trecho.secao) for trecho in trechos)
 
 

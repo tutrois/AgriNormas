@@ -1,8 +1,6 @@
-"""Calibração do limiar de similaridade (HIST-011, TSK-011.2).
+"""Calibração do limiar: pontua o melhor trecho esperado e o melhor geral de cada pergunta.
 
-Lê a tabela de `tests/validacao/perguntas.md` (fonte única das perguntas), extrai as fontes
-esperadas de cada uma e calcula, para cada pergunta, a pontuação do melhor trecho esperado
-e a do melhor trecho geral. Não grava arquivos: quem chama decide o que fazer com o resultado.
+As perguntas e as fontes esperadas vêm de `tests/validacao/perguntas.md`. Não grava arquivos.
 """
 
 from __future__ import annotations
@@ -23,7 +21,7 @@ COLUNAS_PERGUNTA = 4
 
 @dataclass(frozen=True)
 class ReferenciaSecao:
-    """Uma seção esperada, ex.: `FIN-POL-001 §6`. Vale para a seção e suas subseções."""
+    """Uma seção esperada, ex.: `FIN-POL-001 §6`; vale também para suas subseções."""
 
     documento: str
     numero_secao: int
@@ -41,7 +39,7 @@ class PerguntaValidacao:
     numero: int
     texto: str
     fontes_esperadas: tuple[ReferenciaSecao, ...]
-    """Vazio para a pergunta sem resposta nos documentos (pergunta 6)."""
+    """Vazio quando a tabela não lista seção numérica (ex.: só `§faq-N`, perguntas 6 e 7)."""
 
 
 @dataclass(frozen=True)
@@ -51,10 +49,17 @@ class PontuacaoPergunta:
     pergunta: PerguntaValidacao
     melhor_esperado: Trecho | None
     melhor_geral: Trecho | None
+    posicao_melhor_esperado: int | None = None
+    """Posição (a partir de 1) do melhor trecho esperado entre as seções distintas do ranking.
+
+    Conta seções, não entradas, porque o `BuscadorSemantico` corta o `TOP_K` depois de juntar
+    as entradas da mesma seção. O que leva a seção à geração é estar entre as `TOP_K`
+    primeiras e acima do piso, não a pontuação absoluta.
+    """
 
 
 def ler_perguntas_validacao(caminho: Path) -> tuple[PerguntaValidacao, ...]:
-    """Lê as linhas numeradas da tabela de perguntas. Cabeçalho e separador são ignorados."""
+    """Lê as linhas numeradas da tabela de perguntas, ignorando cabeçalho e separador."""
     perguntas: list[PerguntaValidacao] = []
     for linha in caminho.read_text(encoding="utf-8").splitlines():
         if not RE_LINHA_PERGUNTA.match(linha):
@@ -76,8 +81,7 @@ def ler_perguntas_validacao(caminho: Path) -> tuple[PerguntaValidacao, ...]:
 def _referencias(celula: str) -> tuple[ReferenciaSecao, ...]:
     """Lê células como `FIN-POL-001 §4, §5; FRO-POL-002 §6` e `RH-PRO-003 §2 a §4`.
 
-    Uma parte sem código herda o documento da parte anterior. Texto sem `§` não gera nada
-    (ex.: `nenhuma`).
+    Uma parte sem código herda o documento da anterior. Texto sem `§` não gera nada.
     """
     referencias: list[ReferenciaSecao] = []
     documento = ""
@@ -100,34 +104,43 @@ def pontuar_perguntas(
     indice: Indice,
     total_secoes: int,
 ) -> tuple[PontuacaoPergunta, ...]:
-    """Ordena o índice inteiro para cada pergunta e separa o melhor geral do melhor esperado.
+    """Separa o melhor trecho geral do melhor esperado de cada pergunta.
 
-    `vetores_perguntas` segue a ordem de `perguntas`. Usa `total_secoes` como `k` para ter
-    o ranking completo, já que a calibração precisa da pontuação do melhor trecho esperado,
-    mesmo que ele não esteja entre os primeiros.
-
-    `total_secoes` deve ser o número de entradas do índice. Com perguntas de FAQ, há mais
-    entradas que seções: passe `len(entradas_indexaveis(secoes, perguntas_faq=True))`.
+    `vetores_perguntas` segue a ordem de `perguntas`. `total_secoes` é usado como `k` para obter
+    o ranking completo e deve ser o número de entradas do índice, que com perguntas de FAQ é
+    maior que o de seções (use `len(entradas_indexaveis(...))`).
     """
     resultados: list[PontuacaoPergunta] = []
     for pergunta, vetor in zip(perguntas, vetores_perguntas, strict=True):
         ranking = indice.buscar(vetor, total_secoes)
         melhor_geral = ranking[0] if ranking else None
-        melhor_esperado = next(
+        posicao, melhor_esperado = next(
             (
-                trecho
-                for trecho in ranking
+                (posicao, trecho)
+                for posicao, trecho in enumerate(_uma_entrada_por_secao(ranking), start=1)
                 if any(
                     referencia.corresponde(trecho.secao) for referencia in pergunta.fontes_esperadas
                 )
             ),
-            None,
+            (None, None),
         )
         resultados.append(
             PontuacaoPergunta(
                 pergunta=pergunta,
                 melhor_esperado=melhor_esperado,
                 melhor_geral=melhor_geral,
+                posicao_melhor_esperado=posicao,
             )
         )
     return tuple(resultados)
+
+
+def _uma_entrada_por_secao(ranking: Sequence[Trecho]) -> tuple[Trecho, ...]:
+    """Mantém a primeira entrada de cada seção, a de maior pontuação (como no buscador)."""
+    vistas: set[Secao] = set()
+    distintas: list[Trecho] = []
+    for trecho in ranking:
+        if trecho.secao not in vistas:
+            vistas.add(trecho.secao)
+            distintas.append(trecho)
+    return tuple(distintas)

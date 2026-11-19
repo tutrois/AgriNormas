@@ -1,21 +1,9 @@
 """Índice vetorial em memória, com busca por similaridade cosseno.
 
-Os vetores são normalizados na entrada, então o produto interno entre dois vetores
-já é o cosseno. A busca é uma única multiplicação matriz-vetor, sem laço Python sobre
-os vetores do índice (ver ADR-007 para entradas vazias).
-
-Decisões:
-- Vetor de norma zero não tem direção. Sua pontuação é `0.0` e não levanta erro, para que
-  um embedding degenerado não quebre a busca inteira.
-- Vetor vazio (dimensão zero) não é embedding válido e é recusado com `ErroBusca`.
-- Valores não numéricos e não finitos (NaN, infinito) são recusados com `ErroBusca`,
-  tanto nos vetores de `adicionar` quanto na consulta de `buscar`.
-- Cada vetor precisa ser unidimensional. Vetor aninhado (matriz) é recusado com
-  `ErroBusca`, inclusive quando está dentro de um lote de `adicionar`.
-- Inteiro grande demais para float64 tem mensagem própria, não a de valor não numérico.
-- Toda validação acontece antes de qualquer alteração: um `adicionar` recusado não
-  deixa o índice parcialmente preenchido.
-- Mensagens de erro são fixas e não citam o conteúdo das seções nem dos vetores.
+Os vetores são normalizados na entrada, então a busca é uma única multiplicação
+matriz-vetor (ver ADR-007 para entradas vazias). Vetor de norma zero pontua `0.0` em vez de
+quebrar a busca. Toda validação ocorre antes de alterar o índice, e as mensagens de erro
+são fixas, sem citar conteúdo.
 """
 
 from __future__ import annotations
@@ -86,12 +74,7 @@ class IndiceEmMemoria:
 
 
 def _normalizar_lote(vetores: Sequence[Vetor]) -> NDArray[np.float64]:
-    """Valida e converte os vetores em uma matriz (um vetor por linha) de norma 1.
-
-    Cada vetor é validado sozinho antes do empilhamento, inclusive dentro de um lote.
-    Vetores de norma zero continuam zero. Nenhuma validação altera estado: quem chama
-    só guarda o resultado depois de tudo ter passado.
-    """
+    """Valida e converte os vetores em uma matriz de linhas com norma 1 (norma zero fica zero)."""
     convertidos = [_converter_para_real(vetor) for vetor in vetores]
     _validar_dimensoes(convertidos)
     matriz = np.vstack(convertidos)
@@ -130,10 +113,9 @@ def _converter_para_real(vetor: Vetor) -> NDArray[np.float64]:
 
 
 def _converter_objetos_numericos(bruto: NDArray[np.object_]) -> NDArray[np.float64]:
-    """Trata arrays de objetos, que o numpy usa para inteiros grandes demais para int64.
+    """Trata arrays de objetos (inteiros grandes demais para int64); só int e float, sem bool.
 
-    Só aceita números reais (inteiros e floats, sem bool). Inteiro que não cabe em float64
-    tem mensagem própria, para não ser confundido com um valor não numérico.
+    Inteiro que não cabe em float64 tem mensagem própria, distinta de valor não numérico.
     """
     elementos = bruto.ravel().tolist()
     if not all(_e_numero_real(elemento) for elemento in elementos):

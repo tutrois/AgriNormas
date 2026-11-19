@@ -1,4 +1,4 @@
-"""Testes dos modelos e da hierarquia de erros do núcleo (HIST-003)."""
+"""Testes dos modelos e da hierarquia de erros do núcleo."""
 
 import dataclasses
 

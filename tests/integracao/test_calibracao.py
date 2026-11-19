@@ -1,11 +1,9 @@
-"""Testes de integração do buscador com a API real da OpenAI (HIST-011).
+"""Integração do buscador com a API real: só roda com `pytest -m integracao` e consome créditos.
 
-Rodam só com `pytest -m integracao`, com OPENAI_API_KEY no `.env`. Consomem créditos:
-os chunks são embedados uma vez por módulo, as seis perguntas em um pedido, e as perguntas
-1 e 4 uma vez cada pelo `BuscadorSemantico`.
-
-A pergunta 6 não tem resposta nos documentos. O teste só confere que as pontuações foram
-registradas, sem afirmar se passa ou não do limiar: essa decisão fica no ADR-002.
+Desde o ADR-011, `LIMIAR_SIMILARIDADE` é só um piso (0,40). O critério de recuperação é o melhor
+trecho esperado entre as `TOP_K` primeiras e acima do piso, que é o que leva a seção ao modelo.
+As perguntas 6 e 7 só listam `§faq-5`, que `ReferenciaSecao` não lê; para elas só se confere que
+a pontuação foi registrada.
 """
 
 from __future__ import annotations
@@ -38,13 +36,12 @@ pytestmark = pytest.mark.integracao
 RAIZ_PROJETO = Path(__file__).resolve().parents[2]
 CAMINHO_PERGUNTAS = RAIZ_PROJETO / "tests" / "validacao" / "perguntas.md"
 TAMANHO_LOTE = 100
-NUMERO_PERGUNTA_SEM_RESPOSTA = 6
-# Limiar escolhido e registrado no ADR-002 (docs/decisoes/ADR-002-limiar-de-similaridade.md).
-# Constante de propósito: o teste de calibração não depende do valor de `.env`.
-LIMIAR_ADR_002 = 0.60
-# Mesma configuração de `src/composicao.py` (perguntas de FAQ como entrada própria). A linha de
-# base de ADR-002 (55 entradas, sem FAQ) foi medida com False; para reproduzi-la, troque aqui e
-# em `scripts/calibrar_limiar.py`.
+TOTAL_PERGUNTAS = 7
+# Piso e top-k do ADR-011, fixos para o teste não depender do `.env`.
+PISO_ADR_011 = 0.40
+TOP_K_ADR_011 = 8
+# Mesma configuração de `src/composicao.py` (FAQ como entrada própria). A linha de base do ADR-002
+# foi medida com False; para reproduzi-la, troque aqui e em `scripts/calibrar_limiar.py`.
 PERGUNTAS_FAQ = True
 
 
@@ -57,7 +54,7 @@ class _Ambiente:
 
 
 def _secoes_do_corpus(pasta: Path, tamanho_maximo: int) -> tuple[Secao, ...]:
-    """Mesmo fluxo de `scripts/calibrar_limiar.py`: leitura, metadados, limpeza e chunking."""
+    """Mesmo fluxo de `scripts/calibrar_limiar.py`."""
     secoes: list[Secao] = []
     for caminho in sorted(pasta.glob("*.pdf")):
         paginas = LeitorPdf().ler(caminho)
@@ -130,25 +127,36 @@ def test_pergunta_4_traz_trecho_de_rh_pro_003(ambiente: _Ambiente) -> None:
     assert any(documento == "RH-PRO-003" for documento, _ in secoes), secoes
 
 
-def test_calibracao_registra_pontuacao_das_seis_perguntas(ambiente: _Ambiente) -> None:
-    assert len(ambiente.pontuacoes) == 6
+def _com_secao_numerica(ambiente: _Ambiente) -> tuple[PontuacaoPergunta, ...]:
+    return tuple(p for p in ambiente.pontuacoes if p.pergunta.fontes_esperadas)
+
+
+def test_calibracao_registra_pontuacao_das_sete_perguntas(ambiente: _Ambiente) -> None:
+    assert len(ambiente.pontuacoes) == TOTAL_PERGUNTAS
     assert all(resultado.melhor_geral is not None for resultado in ambiente.pontuacoes)
 
 
-def test_pergunta_6_tem_pontuacao_registrada_sem_decisao_de_limiar(ambiente: _Ambiente) -> None:
-    resultado = next(
-        p for p in ambiente.pontuacoes if p.pergunta.numero == NUMERO_PERGUNTA_SEM_RESPOSTA
-    )
+def test_perguntas_so_com_faq_tem_pontuacao_registrada(ambiente: _Ambiente) -> None:
+    so_faq = [p for p in ambiente.pontuacoes if not p.pergunta.fontes_esperadas]
 
-    assert resultado.melhor_geral is not None
-    assert -1.0 <= resultado.melhor_geral.pontuacao <= 1.0
+    assert [p.pergunta.numero for p in so_faq] == [6, 7]
+    for resultado in so_faq:
+        assert resultado.melhor_geral is not None
+        assert -1.0 <= resultado.melhor_geral.pontuacao <= 1.0
 
 
-def test_perguntas_1_a_5_tem_trecho_esperado_acima_do_limiar(ambiente: _Ambiente) -> None:
-    """Confirma a escolha do limiar registrada no ADR-002 (perguntas 1 a 5)."""
-    limiar = LIMIAR_ADR_002
-    for resultado in ambiente.pontuacoes:
-        if resultado.pergunta.numero == NUMERO_PERGUNTA_SEM_RESPOSTA:
-            continue
+def test_perguntas_com_secao_numerica_tem_trecho_esperado_acima_do_piso(
+    ambiente: _Ambiente,
+) -> None:
+    for resultado in _com_secao_numerica(ambiente):
         assert resultado.melhor_esperado is not None, resultado.pergunta.numero
-        assert resultado.melhor_esperado.pontuacao >= limiar, resultado.pergunta.numero
+        assert resultado.melhor_esperado.pontuacao >= PISO_ADR_011, resultado.pergunta.numero
+
+
+def test_perguntas_com_secao_numerica_tem_trecho_esperado_no_top_k(ambiente: _Ambiente) -> None:
+    """Seções esperadas adicionais fora do top-k (ex.: FIN-POL-001 §4 na pergunta 3) são cobradas
+    em `tests/validacao/`."""
+    for resultado in _com_secao_numerica(ambiente):
+        posicao = resultado.posicao_melhor_esperado
+        assert posicao is not None, resultado.pergunta.numero
+        assert posicao <= TOP_K_ADR_011, (resultado.pergunta.numero, posicao)

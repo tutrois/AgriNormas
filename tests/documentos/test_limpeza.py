@@ -1,8 +1,4 @@
-"""Testes da limpeza do texto: funções puras com textos sintéticos e com os PDFs reais.
-
-Os testes com PDFs usam `LeitorPdf` de verdade, para validar a limpeza sobre o texto
-bruto que o pypdf devolve, e não sobre um texto idealizado.
-"""
+"""Testes da limpeza, com textos sintéticos e com o texto bruto real do `LeitorPdf`."""
 
 from __future__ import annotations
 
@@ -82,9 +78,6 @@ def _texto_limpo(nome: str) -> str:
 
 def _tokens(texto: str) -> list[str]:
     return texto.split()
-
-
-# --- funções puras, com textos sintéticos -----------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -300,9 +293,6 @@ def test_veiculos_tem_um_par_por_paragrafo_com_paginas_em_ordem_cobrindo_as_quat
     assert len(paginas) == 4
     assert numeros == sorted(numeros)
     assert set(numeros) == {1, 2, 3, 4}
-
-
-# --- PDFs reais -------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("nome", PDFS_REAIS)

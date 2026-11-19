@@ -1,9 +1,6 @@
-"""Teste de integração da montagem do assistente com a API real da OpenAI (HIST-018, critério 1).
-
-Não substitui `carregar_secoes`, não usa dublês: lê os PDFs de `base_conhecimento/` e chama a
-API com a chave do `.env`. Consome créditos. Só roda com `pytest -m integracao`.
-
-A pergunta vem de `tests/validacao/perguntas.md`, a fonte única das perguntas.
+"""Integração da montagem do assistente com a API real, sem dublês: lê os PDFs de
+`base_conhecimento/` e consome créditos. Só roda com `pytest -m integracao`.
+A pergunta vem de `tests/validacao/perguntas.md`, a fonte única.
 """
 
 from __future__ import annotations

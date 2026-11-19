@@ -1,9 +1,7 @@
-"""Testes da configuração tipada e validada (HIST-002).
-
-Usam o parâmetro `ambiente`: não leem `os.environ` nem o `.env` real.
-"""
+"""Testes da configuração tipada e validada, sem ler `os.environ` nem o `.env` real."""
 
 import os
+import pprint
 from collections.abc import Mapping
 from pathlib import Path
 from unittest.mock import patch
@@ -114,7 +112,7 @@ def test_padroes_do_codigo_coincidem_com_env_example() -> None:
     assert configuracao_exemplo == carregar_configuracao(AMBIENTE_MINIMO)
 
 
-# --- Caminho padrão: arquivo .env e os.environ (ambiente=None) ---
+# Caminho padrão: arquivo .env e os.environ (ambiente=None)
 
 
 def test_le_o_env_quando_ambiente_nao_e_informado(tmp_path: Path) -> None:
@@ -263,7 +261,7 @@ def test_mensagem_de_erro_nao_expoe_a_chave_nem_o_valor_digitado() -> None:
     assert excinfo.value.__suppress_context__ is True
 
 
-# --- Regra (d): valor vazio ou só com espaços usa o padrão; chave vazia é ausente ---
+# Regra (d): valor vazio ou só com espaços usa o padrão; chave vazia é ausente
 
 CAMPOS_COM_PADRAO = (
     "MODELO_GERACAO",
@@ -295,7 +293,7 @@ def test_chave_vazia_ou_so_com_espacos_continua_sendo_tratada_como_ausente(
         carregar_configuracao(ambiente)
 
 
-# --- Regra (e): com `ambiente` informado, .env e os.environ são ignorados ---
+# Regra (e): com `ambiente` informado, .env e os.environ são ignorados
 
 
 def test_ambiente_informado_ignora_env_e_os_environ(tmp_path: Path) -> None:
@@ -339,7 +337,7 @@ def test_ambiente_informado_sem_chave_nao_usa_a_chave_do_processo() -> None:
         carregar_configuracao({})
 
 
-# --- M-11: tetos de segurança para TOP_K e TAMANHO_MAXIMO_CHUNK ---
+# Tetos de segurança para TOP_K e TAMANHO_MAXIMO_CHUNK
 
 
 @pytest.mark.parametrize("top_k", ["1", "50"], ids=["minimo", "maximo"])
@@ -405,3 +403,34 @@ def test_pasta_com_til_expande_para_a_pasta_do_usuario() -> None:
     configuracao = carregar_configuracao({**AMBIENTE_MINIMO, "PASTA_DOCUMENTOS": "~/x"})
 
     assert configuracao.pasta_documentos == Path.home() / "x"
+
+
+# Bordas da chave e do vazamento
+
+
+def test_valor_none_para_a_chave_e_tratado_como_ausente() -> None:
+    with pytest.raises(ConfiguracaoInvalida, match="OPENAI_API_KEY"):
+        carregar_configuracao({"OPENAI_API_KEY": None})  # type: ignore[dict-item]
+
+
+def test_chave_com_espacos_nas_bordas_e_normalizada() -> None:
+    configuracao = carregar_configuracao({"OPENAI_API_KEY": f"  {CHAVE_FALSA}  "})
+
+    assert configuracao.chave_openai == CHAVE_FALSA
+
+
+def test_limiar_infinito_fora_do_intervalo_lanca_erro() -> None:
+    with pytest.raises(ConfiguracaoInvalida, match="LIMIAR_SIMILARIDADE"):
+        carregar_configuracao({**AMBIENTE_MINIMO, "LIMIAR_SIMILARIDADE": "inf"})
+
+
+def test_pprint_nao_exibe_a_chave() -> None:
+    configuracao = carregar_configuracao(AMBIENTE_MINIMO)
+
+    assert CHAVE_FALSA not in pprint.pformat(configuracao)
+
+
+def test_f_string_nao_exibe_a_chave() -> None:
+    configuracao = carregar_configuracao(AMBIENTE_MINIMO)
+
+    assert CHAVE_FALSA not in f"{configuracao!r} {configuracao}"

@@ -1,16 +1,7 @@
-"""Limpeza do texto extraído dos PDFs (HIST-005).
+"""Limpeza do texto extraído dos PDFs: funções puras, uma transformação cada.
 
-Cada função faz uma transformação e é pura: recebe texto e devolve texto, sem efeitos
-colaterais. `limpar_paginas` compõe as etapas na ordem correta.
-
-Os PDFs reais trazem três tipos de ruído que estas funções tratam:
-
-- cabeçalho institucional repetido no topo de cada página;
-- numeração de página (`Página N`), também repetida;
-- quebras de linha do layout no meio das frases, que precisam virar espaço.
-
-Não há palavras partidas por hífen na quebra de linha nos PDFs de `base_conhecimento/`,
-então a correção de hifenização (TSK-005.3) não foi implementada: não há caso real.
+Remove cabeçalho e numeração de página e une as quebras de linha do layout no meio das
+frases. Hifenização não é tratada: os PDFs de `base_conhecimento/` não têm esse caso.
 """
 
 from __future__ import annotations
@@ -24,42 +15,32 @@ from nucleo.modelos import Pagina
 CABECALHO_PADRAO: Final[re.Pattern[str]] = re.compile(
     r"AGRICOPPEL\s*[\x7f•·]\s*MATERIAL FICTÍCIO.*"
 )
-"""Linha inteira do cabeçalho institucional.
-
-O separador aparece como `\\x7f` no texto extraído pelo pypdf (o `•` original).
-"""
+"""Linha do cabeçalho institucional. O `•` original sai como `\\x7f` no texto do pypdf."""
 
 RODAPE_PADRAO: Final[re.Pattern[str]] = re.compile(r"Página \d+")
-"""Linha inteira com a numeração da página, ex.: `Página 2`."""
 
 RODAPE_FIM_DO_DOCUMENTO: Final[re.Pattern[str]] = re.compile(
     r"Fim do documento\s*[\x7f•·]\s*Material simulado para avaliação técnica.*"
 )
-"""Linha inteira do rodapé de encerramento, presente no fim do Procedimento_Ferias.pdf."""
 
 TITULO_NUMERADO: Final[re.Pattern[str]] = re.compile(r"\d+(?:\.\d+)*\.?\s+[A-ZÀ-Ý]")
-"""Início de um título numerado, ex.: `3. Despesas`, `3.1 Transporte` ou `6.1 Exemplo`.
+"""Início de título numerado (`3. Despesas`, `3.1 Transporte`).
 
-Exige letra maiúscula depois do número, para não confundir com linha de corpo que
-começa com número (ex.: `5 (cinco) dias úteis`).
+Exige maiúscula depois do número para não confundir com corpo (`5 (cinco) dias úteis`).
 """
 
 LARGURA_LINHA_CHEIA: Final[int] = 95
 """Comprimento mínimo (`>=`) de uma linha para ser considerada quebrada pelo layout.
 
-Nos três PDFs, as quebras de layout no meio da frase têm 96 caracteres ou mais. Este
-valor sozinho não basta: fins de parágrafo também chegam a 96-114 caracteres no corpus.
-Por isso `unir_quebras_de_linha` só une duas linhas quando a anterior tem esse tamanho,
-não termina em pontuação de fim de frase e a seguinte começa com letra minúscula.
+Nos PDFs do corpus, as quebras no meio da frase têm 96 caracteres ou mais, mas fins de
+parágrafo também chegam a 96-114. Por isso só se une quando a linha anterior tem esse
+tamanho, não termina em pontuação e a seguinte começa com minúscula.
 
-Limites da regra: o valor foi calibrado com o corpus atual e pode precisar de ajuste em
-outro layout; uma quebra no meio da frase seguida de maiúscula (nome próprio, sigla ou
-início de frase) não é unida; e um fim de parágrafo sem pontuação, seguido de linha que
-começa com minúscula, seria unido indevidamente.
+Limites: valor calibrado com o corpus atual; quebra seguida de maiúscula (nome próprio,
+sigla) não é unida; fim de parágrafo sem pontuação seguido de minúscula seria unido.
 """
 
 PONTUACAO_FIM_DE_FRASE: Final[tuple[str, ...]] = (".", ";", ":", "?", "!", ")")
-"""Caracteres que, no fim de uma linha, indicam que a frase terminou."""
 
 _SEPARADOR_DE_BLOCO: Final[str] = " "
 
@@ -76,21 +57,15 @@ def remover_rodape(texto: str) -> str:
 
 
 def normalizar_espacos(texto: str) -> str:
-    """Colapsa espaços e tabulações em um único espaço e apaga linhas vazias.
-
-    Quebras de linha são preservadas aqui; quem decide quais viram espaço é
-    `unir_quebras_de_linha`.
-    """
+    """Colapsa espaços e tabulações e apaga linhas vazias, preservando as quebras de linha."""
     linhas = (" ".join(linha.split()) for linha in texto.splitlines())
     return "\n".join(linha for linha in linhas if linha)
 
 
 def unir_quebras_de_linha(texto: str) -> str:
-    """Une as linhas quebradas pelo layout e mantém títulos e perguntas em linha própria.
+    """Une as linhas quebradas pelo layout; títulos e perguntas ficam em linha própria.
 
-    Cada bloco de saída é um parágrafo, um título numerado ou uma pergunta de FAQ. A
-    regra de união está em `_continua_paragrafo`, com seus limites descritos em
-    `LARGURA_LINHA_CHEIA`.
+    Limites da regra em `LARGURA_LINHA_CHEIA`.
     """
     linhas = texto.splitlines()
     return "\n".join(
@@ -108,16 +83,12 @@ def limpar_texto(texto: str) -> str:
 def limpar_paginas(paginas: Sequence[Pagina]) -> tuple[tuple[int, str], ...]:
     """Parágrafos limpos do documento, na ordem, cada um com o número da página em que começa.
 
-    Devolve uma tupla de pares `(numero_da_pagina, texto)`, um par por parágrafo unido.
-    Um parágrafo que atravessa páginas recebe a página em que começa. Páginas sem texto
-    útil não geram pares. Devolve `()` se nenhuma página tiver texto.
+    Devolve pares `(numero_da_pagina, texto)`, um por parágrafo; um parágrafo que atravessa
+    páginas recebe a página em que começa. Devolve `()` se nenhuma página tiver texto.
 
-    Contrato novo (HIST-007, M-18): antes, esta função devolvia uma única `str`, e o
-    número da página se perdia. `Secao.pagina` precisa dele. A limpeza de cada linha
-    (cabeçalho, rodapé e espaços) é feita por página, e a união das quebras é feita
-    sobre a sequência de linhas de todas as páginas, o que permite que um parágrafo
-    continue na página seguinte. A junção dos pares com `"\\n"` reproduz o texto que
-    `limpar_texto` devolveria para o documento concatenado.
+    A limpeza é feita por página, mas a união das quebras corre sobre as linhas de todas
+    elas, para o parágrafo poder continuar na página seguinte. Juntar os pares com `"\\n"`
+    reproduz o resultado de `limpar_texto`.
     """
     linhas_com_pagina = [
         (pagina.numero, linha) for pagina in paginas for linha in _linhas_limpas(pagina.texto)
@@ -130,16 +101,11 @@ def limpar_paginas(paginas: Sequence[Pagina]) -> tuple[tuple[int, str], ...]:
 
 
 def _linhas_limpas(texto: str) -> list[str]:
-    """Linhas de uma página, sem cabeçalho, rodapé nem espaços sobrando."""
     return normalizar_espacos(remover_rodape(remover_cabecalho(texto))).splitlines()
 
 
 def _agrupar_linhas(linhas: Sequence[str]) -> list[tuple[int, int]]:
-    """Agrupa linhas consecutivas em blocos, devolvendo `(inicio, fim)` de cada bloco.
-
-    `fim` é exclusivo. Uma linha só entra no bloco da anterior quando
-    `_continua_paragrafo` diz que é continuação.
-    """
+    """Blocos de linhas consecutivas como `(inicio, fim)`, com `fim` exclusivo."""
     grupos: list[tuple[int, int]] = []
     for indice, linha in enumerate(linhas):
         if indice > 0 and _continua_paragrafo(linhas[indice - 1], linha):
@@ -151,18 +117,13 @@ def _agrupar_linhas(linhas: Sequence[str]) -> list[tuple[int, int]]:
 
 
 def _remover_linhas(texto: str, padrao: re.Pattern[str]) -> str:
-    """Mantém só as linhas que não casam inteiras com `padrao`."""
     return "\n".join(
         linha for linha in texto.splitlines() if padrao.fullmatch(linha.strip()) is None
     )
 
 
 def _continua_paragrafo(anterior: str, linha: str) -> bool:
-    """Diz se `linha` é a continuação do parágrafo que termina em `anterior`.
-
-    Une só quando a quebra caiu no meio da frase: `anterior` é cheia e não termina em
-    pontuação de fim de frase, e `linha` começa com letra minúscula.
-    """
+    """Une só quando a quebra caiu no meio da frase (ver `LARGURA_LINHA_CHEIA`)."""
     if _eh_titulo(anterior) or _eh_pergunta(anterior):
         return False
     if _eh_titulo(linha) or _eh_pergunta(linha):
@@ -171,7 +132,6 @@ def _continua_paragrafo(anterior: str, linha: str) -> bool:
 
 
 def _quebra_no_meio_da_frase(anterior: str) -> bool:
-    """Linha com largura de quebra do layout que não termina a frase."""
     texto = anterior.rstrip()
     return len(texto) >= LARGURA_LINHA_CHEIA and not texto.endswith(PONTUACAO_FIM_DE_FRASE)
 

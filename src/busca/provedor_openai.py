@@ -1,8 +1,6 @@
-"""Provedor de embeddings da OpenAI (HIST-009).
+"""Provedor de embeddings da OpenAI: lotes, retentativa em erro transitório e `ErroBusca`.
 
-Implementa o contrato `ProvedorEmbedding`. Envia os textos em lotes e repete a chamada
-com espera crescente quando o erro é transitório (limite de taxa, 5xx ou conexão).
-Erros do SDK viram `ErroBusca`, sem a chave nem o conteúdo enviado na mensagem.
+As mensagens de erro não citam a chave nem o conteúdo enviado.
 """
 
 from __future__ import annotations
@@ -51,11 +49,8 @@ class ProvedorEmbeddingOpenAI:
         esperar: Callable[[float], None] = time.sleep,
         cliente: openai.OpenAI | None = None,
     ) -> None:
-        """`cliente` existe para testes. Em produção, o cliente é criado com `chave`.
-
-        `timeout_segundos` vem da composição (`Configuracao.timeout_segundos`).
-        `max_retries=0` desliga a retentativa interna do SDK, para que `tentativas`
-        seja o número real de chamadas.
+        """`cliente` existe para testes. `max_retries=0` desliga a retentativa do SDK, para que
+        `tentativas` seja o número real de chamadas.
         """
         _validar_configuracao(modelo, chave, tamanho_lote, tentativas, timeout_segundos)
         self._modelo = modelo
@@ -88,10 +83,10 @@ class ProvedorEmbeddingOpenAI:
         return [tuple(float(valor) for valor in item.embedding) for item in itens]
 
     def _chamar_api(self, lote: list[str]) -> CreateEmbeddingResponse:
-        """Chama a API com retentativa. Converte falhas fora dos blocos `except`.
+        """Chama a API com retentativa.
 
-        `ErroBusca` é levantado depois do `try`, para que `__context__` não guarde a
-        exceção do SDK (que carrega a requisição com o cabeçalho `Authorization`).
+        `ErroBusca` é levantado fora do `except`, para que `__context__` não guarde a exceção
+        do SDK, que carrega a requisição com o cabeçalho `Authorization`.
         """
         for tentativa in range(1, self._tentativas + 1):
             try:

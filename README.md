@@ -35,11 +35,11 @@ Assistente que responde perguntas em linguagem natural com base nas normativas i
 | Configuração validada | Concluído |
 | Contratos e modelos de domínio | Concluído |
 | Leitura, limpeza e divisão dos PDFs | Concluído |
-| Recuperação e limiar de similaridade | Concluído; limitação conhecida nas perguntas 2, 3 e 4 |
-| Geração fundamentada e validação de citações | Aceita com ressalva; limitação conhecida nas perguntas 2, 3 e 4 |
+| Recuperação e limiar de similaridade | Concluído; limiar como piso (ADR-011); pendência na pergunta 3 |
+| Geração fundamentada e validação de citações | Aceita com ressalva; pendências nas perguntas 3 e 6 (ADR-011) |
 | Orquestração e composição | Aceita com ressalva |
 | Interface Streamlit | Aceita com ressalvas |
-| Suíte de validação das seis perguntas | Aceita com limitação nas perguntas 2, 3 e 4 |
+| Suíte de validação das seis perguntas | Aceita com limitação; pendências nas perguntas 3 e 6 (ADR-011) |
 | Qualidade estática e CI | Em andamento |
 | Documentação e entrega | Em andamento |
 
@@ -118,10 +118,10 @@ Os demais valores já têm padrão no `.env.example`, e um valor vazio usa o pad
 |---|---|---|
 | `MODELO_GERACAO` | `gpt-4o-mini` | Modelo que gera a resposta |
 | `MODELO_EMBEDDING` | `text-embedding-3-small` | Modelo dos embeddings |
-| `LIMIAR_SIMILARIDADE` | `0.60` | Abaixo dele, o trecho é descartado. Valor provisório (igual ao `.env.example`). Três das seis perguntas de validação (2, 3 e 4) têm seções de apoio abaixo dele |
-| `TOP_K` | `4` | Número de trechos recuperados por pergunta |
+| `LIMIAR_SIMILARIDADE` | `0.40` | Piso de similaridade. Abaixo dele, o trecho é descartado; se nenhum trecho passa, a resposta é "não há evidência", sem chamar o modelo. O piso só separa perguntas sem relação com a base: quem decide se há evidência é a geração, com validação de citações (ADR-011) |
+| `TOP_K` | `8` | Número máximo de trechos recuperados por pergunta |
 | `PASTA_DOCUMENTOS` | `base_conhecimento` | Pasta com os PDFs lidos |
-| `TAMANHO_MAXIMO_CHUNK` | `1200` | Tamanho máximo de uma seção indexada |
+| `TAMANHO_MAXIMO_CHUNK` | `1200` | Tamanho máximo de uma seção indexada. Aceita de 100 a 10000 |
 | `TIMEOUT_SEGUNDOS` | `30` | Tempo limite das chamadas à API |
 
 Se a aplicação mostrar um erro de configuração, confira o nome da variável e o valor no `.env`. A mensagem de erro não mostra o valor.
@@ -159,7 +159,7 @@ A suíte offline é o padrão. Os casos marcados como `xfail` (falha esperada) s
 
 As seis perguntas usadas para validar o assistente, com as respostas de referência, estão em [tests/validacao/perguntas.md](tests/validacao/perguntas.md). A pergunta 6 (limite de combustível por viagem) deve receber a resposta de que o documento **não estabelece limite mensal de combustível e não trata de limite por viagem**, citando FRO-POL-002 §faq-5.
 
-Na integração com a API real, as perguntas 1, 5 e 6 passam. As perguntas 2, 3 e 4 seguem como `xfail`. Essas medições foram feitas com `TOP_K` 6, valor do `.env` local. Com `TOP_K` 4, que é o padrão do `.env.example`, a pergunta 4 também perde a seção RH-PRO-003 §3.
+Na integração com a API real, com o piso de 0,40 e `TOP_K` 8 (ADR-011), as perguntas 1, 2, 4, 5 e 7 respondem corretamente, e a pergunta 2 passou a citar FIN-POL-001 §4. As perguntas fora do escopo recusam. A pergunta 3 ainda não cita FIN-POL-001 §4, e a pergunta 6 regrediu para recusa em uma execução (ver a limitação abaixo).
 
 A pergunta 6 apresenta resultados diferentes entre execuções da integração real. Ela não tem marca de falha esperada, então uma falha nela aparece como erro no teste.
 
@@ -173,15 +173,16 @@ python tests/validacao/gravar_vetores.py
 
 O script faz um único pedido à API (com as seções e as seis perguntas) e consome créditos. Ele precisa da `OPENAI_API_KEY` no `.env`.
 
-### Limitação conhecida: perguntas 2, 3 e 4
+### Limitação conhecida: perguntas 3 e 6
 
-A recuperação não traz hoje todas as seções que sustentam estas respostas, porque elas ficam abaixo do limiar de 0,60:
+O limiar de similaridade é um piso (0,40), e a decisão de haver evidência fica com a geração e com a validação de citações (ADR-011). O motivo é que a similaridade de cosseno não separa perguntas com resposta de perguntas relacionadas sem resposta: as duas ficam entre 0,41 e 0,55.
 
-- **Pergunta 2:** FIN-POL-001 §4 tem cosseno 0,568.
-- **Pergunta 3:** a seção FIN-POL-001 §4 não é recuperada (cosseno 0,41, abaixo do limiar 0,60), por isso a resposta não a cita.
-- **Pergunta 4:** RH-PRO-003 §4 tem cosseno 0,44. Com `TOP_K` 4, a seção RH-PRO-003 §3 também fica de fora.
+- **Pergunta 3:** FIN-POL-001 §4 tem cosseno 0,41. Passa do piso, mas fica na 19ª posição, fora dos 8 trechos recuperados, por isso a resposta não a cita.
+- **Pergunta 6:** recusou em uma execução da integração real, em vez de dizer que o documento não estabelece limite por viagem. Em tratamento.
 
-As falhas estão marcadas como `xfail` na suíte. Uma busca híbrida (cosseno com BM25) foi testada e não resolveu esses casos, por isso foi descartada. A abordagem para esses casos ainda não foi decidida.
+Também por causa do piso, a recusa de perguntas relacionadas à base, mas sem resposta nela (por exemplo, home office), depende do modelo. A validação recusa a resposta que não cita nenhuma seção recuperada.
+
+As falhas conhecidas estão marcadas como `xfail` na suíte. A busca híbrida (ADR-009) e a reescrita da pergunta (ADR-010) foram testadas e rejeitadas.
 
 ## Estrutura de pastas
 
@@ -200,6 +201,9 @@ AgriNormas/
 │   └── validacao/         # Perguntas de validação e vetores gravados (versionado)
 ├── scripts/               # Calibração do limiar
 ├── dados/                 # Cache do índice, gerado em execução (não versionado)
+├── .github/workflows/     # CI: segredos, ruff, mypy e pytest sem integração
+├── .pre-commit-config.yaml  # Hooks locais: ruff check e ruff format
+├── .python-version        # Versão do Python fixada
 ├── pyproject.toml         # Configuração de ruff, mypy e pytest
 ├── requirements.txt       # Dependências com versões fixadas
 └── .env.example           # Modelo de configuração
@@ -216,5 +220,5 @@ AgriNormas/
 A interface chama o `AssistenteRAG`, que depende apenas de contratos (busca e geração), definidos em `src/nucleo/contratos.py`. As implementações concretas, como OpenAI, numpy e pypdf, são escolhidas em `src/composicao.py`, o único lugar que as conhece. Assim, cada parte pode ser trocada sem alterar as regras de negócio.
 
 - **Documentos:** leitura, limpeza e chunking dos PDFs por seção numerada, com metadados (código do documento e número da seção). Seções de exceção ficam inteiras.
-- **Busca:** embeddings das seções, índice em memória e filtro pelo limiar de similaridade. Abaixo do limiar, o assistente responde que não há evidência.
+- **Busca:** embeddings das seções, índice em memória e piso de similaridade. Se nenhum trecho passa do piso, o assistente responde que não há evidência, sem chamar o modelo. Acima do piso, a geração decide se os trechos respondem à pergunta, e a validação recusa a resposta sem citação.
 - **Geração:** monta o prompt com os trechos recuperados, pede a resposta ao modelo e valida se as citações correspondem aos trechos enviados. Quando a resposta depende de duas políticas, cita as duas.

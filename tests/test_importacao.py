@@ -1,4 +1,4 @@
-"""Teste de fumaça: todos os pacotes de src/ podem ser importados (HIST-001)."""
+"""Teste de fumaça: todos os pacotes de src/ podem ser importados."""
 
 import importlib
 
