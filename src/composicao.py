@@ -18,7 +18,7 @@ from typing import Final
 
 from busca.buscador import BuscadorSemantico
 from busca.cache import EntradaCache, RepositorioCacheVetores, hash_texto
-from busca.indexacao import construir_indice, construir_indice_com_cache, texto_indexavel
+from busca.indexacao import construir_indice, construir_indice_com_cache, entradas_indexaveis
 from busca.indice_memoria import MENSAGEM_DIMENSAO_DIFERENTE_DO_INDICE
 from busca.provedor_openai import ProvedorEmbeddingOpenAI
 from config import RAIZ_PROJETO, Configuracao, carregar_configuracao
@@ -55,7 +55,11 @@ def montar_assistente(configuracao: Configuracao) -> AssistenteRAG:
     provedor = _provedor_embedding(configuracao)
     repositorio = RepositorioCacheVetores(CAMINHO_CACHE_VETORES)
     indice = construir_indice_com_cache(
-        secoes, provedor, modelo=configuracao.modelo_embedding, repositorio=repositorio
+        secoes,
+        provedor,
+        modelo=configuracao.modelo_embedding,
+        repositorio=repositorio,
+        perguntas_faq=True,
     )
     buscador = _BuscadorComReconstrucao(
         secoes,
@@ -163,7 +167,7 @@ class _BuscadorComReconstrucao:
         """
         self._repositorio.gravar(())
         capturador = _ProvedorCapturador(self._provedor)
-        indice = construir_indice(self._secoes, capturador)
+        indice = construir_indice(self._secoes, capturador, perguntas_faq=True)
         self._repositorio.gravar(_entradas_do_cache(self._secoes, capturador.vetores, self._modelo))
         self._buscador = self._novo_buscador(indice)
 
@@ -187,7 +191,13 @@ def _dimensao_divergente(erro: ErroBusca) -> bool:
 def _entradas_do_cache(
     secoes: Sequence[Secao], vetores: Sequence[Vetor], modelo: str
 ) -> tuple[EntradaCache, ...]:
+    """Uma entrada de cache por vetor, com o hash do texto que foi enviado ao provedor.
+
+    Usa as mesmas entradas de `construir_indice(..., perguntas_faq=True)`, na mesma ordem,
+    para que o hash de cada pergunta de FAQ seja o da própria pergunta.
+    """
+    entradas = entradas_indexaveis(secoes, perguntas_faq=True)
     return tuple(
-        EntradaCache(hash_texto=hash_texto(texto_indexavel(secao)), modelo=modelo, vetor=vetor)
-        for secao, vetor in zip(secoes, vetores, strict=True)
+        EntradaCache(hash_texto=hash_texto(entrada.texto), modelo=modelo, vetor=vetor)
+        for entrada, vetor in zip(entradas, vetores, strict=True)
     )

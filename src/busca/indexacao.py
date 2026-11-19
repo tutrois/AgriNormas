@@ -2,12 +2,18 @@
 
 `texto_indexavel` define o que é enviado ao provedor de embeddings para cada seção. Usar o
 mesmo texto na calibração, nos testes e na composição mantém as pontuações comparáveis.
+
+Com `perguntas_faq=True`, cada par de FAQ ganha uma segunda entrada no índice, com só a
+pergunta, apontando para a mesma `Secao`. Assim, uma pergunta do usuário parecida com a do FAQ
+se aproxima desse vetor, sem competir com a resposta inteira. O padrão é `False`, para que
+quem não conhece a opção continue com uma entrada por seção.
 """
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
 from busca.cache import EntradaCache, RepositorioCacheVetores, hash_texto
 from busca.indice_memoria import IndiceEmMemoria
@@ -28,6 +34,17 @@ MENSAGEM_CACHE_DIMENSAO_DIVERGENTE = (
 )
 
 
+@dataclass(frozen=True)
+class EntradaIndexavel:
+    """Um texto que vai ao provedor e a seção à qual o vetor resultante pertence.
+
+    Com `perguntas_faq`, uma seção de FAQ gera duas entradas, ambas com a mesma `Secao`.
+    """
+
+    secao: Secao
+    texto: str
+
+
 def texto_indexavel(secao: Secao) -> str:
     """Código do documento, número e título antes do corpo.
 
@@ -37,16 +54,49 @@ def texto_indexavel(secao: Secao) -> str:
     return f"{secao.documento} §{secao.numero} {secao.titulo}\n{secao.texto}"
 
 
-def construir_indice(secoes: Sequence[Secao], provedor: ProvedorEmbedding) -> IndiceEmMemoria:
-    """Gera um vetor por seção, em um único pedido ao provedor, e carrega o índice.
+def pergunta_de_faq(secao: Secao) -> str | None:
+    """Devolve a pergunta de um par de FAQ, que é o título da seção, sem espaços nas pontas.
+
+    Devolve `None` para seções que não são de FAQ e para pergunta vazia.
+    """
+    if secao.tipo != "faq":
+        return None
+    return secao.titulo.strip() or None
+
+
+def entradas_indexaveis(
+    secoes: Sequence[Secao], *, perguntas_faq: bool = False
+) -> tuple[EntradaIndexavel, ...]:
+    """Um texto por seção, na ordem das seções. Com `perguntas_faq`, a pergunta de cada FAQ
+    vem logo depois do texto da sua seção.
+
+    Com `perguntas_faq=False`, a saída tem exatamente uma entrada por seção. Sem seções, `()`.
+    """
+    entradas: list[EntradaIndexavel] = []
+    for secao in secoes:
+        entradas.append(EntradaIndexavel(secao=secao, texto=texto_indexavel(secao)))
+        pergunta = pergunta_de_faq(secao) if perguntas_faq else None
+        if pergunta is not None:
+            entradas.append(EntradaIndexavel(secao=secao, texto=pergunta))
+    return tuple(entradas)
+
+
+def construir_indice(
+    secoes: Sequence[Secao],
+    provedor: ProvedorEmbedding,
+    *,
+    perguntas_faq: bool = False,
+) -> IndiceEmMemoria:
+    """Gera um vetor por entrada, em um único pedido ao provedor, e carrega o índice.
 
     Sem seções, devolve o índice vazio sem chamar o provedor (ADR-007).
     """
+    entradas = entradas_indexaveis(secoes, perguntas_faq=perguntas_faq)
     indice = IndiceEmMemoria()
-    if not secoes:
+    if not entradas:
         return indice
-    vetores = provedor.gerar(tuple(texto_indexavel(secao) for secao in secoes))
-    indice.adicionar(secoes, vetores)
+    vetores = provedor.gerar(tuple(entrada.texto for entrada in entradas))
+    indice.adicionar([entrada.secao for entrada in entradas], vetores)
     return indice
 
 
@@ -56,15 +106,17 @@ def construir_indice_com_cache(
     *,
     modelo: str,
     repositorio: RepositorioCacheVetores,
+    perguntas_faq: bool = False,
 ) -> IndiceEmMemoria:
     """Monta o índice reaproveitando os vetores do cache (HIST-012, TSK-012.2).
 
     Só os textos cujo hash não está no cache, para o `modelo` atual, vão ao provedor, em um
-    único pedido. Ao final o cache é regravado com os chunks atuais, então vetores de
-    documentos removidos ou alterados saem do disco.
+    único pedido. Ao final o cache é regravado com as entradas atuais, então vetores de
+    documentos removidos ou alterados saem do disco. Com `perguntas_faq`, as perguntas de FAQ
+    também entram no cache, cada uma pelo próprio hash.
 
     Se os vetores novos têm dimensão diferente da do cache (M-29), o cache é descartado e
-    todos os chunks são recalculados em um segundo pedido, e a regravação substitui o cache
+    todas as entradas são recalculadas em um segundo pedido, e a regravação substitui o cache
     antigo. Se esse segundo pedido também falhar, o cache antigo fica intacto.
 
     Limite conhecido: `construir_indice_com_cache` não compara a dimensão quando não há
@@ -75,11 +127,12 @@ def construir_indice_com_cache(
 
     Sem seções, devolve o índice vazio e grava cache vazio, sem chamar o provedor (ADR-007).
     """
-    if not secoes:
+    entradas = entradas_indexaveis(secoes, perguntas_faq=perguntas_faq)
+    if not entradas:
         repositorio.gravar(())
         return IndiceEmMemoria()
 
-    textos = tuple(texto_indexavel(secao) for secao in secoes)
+    textos = tuple(entrada.texto for entrada in entradas)
     hashes = tuple(hash_texto(texto) for texto in textos)
     hashes_unicos = tuple(dict.fromkeys(hashes))
     textos_por_hash = dict(zip(hashes, textos, strict=True))
@@ -97,7 +150,7 @@ def construir_indice_com_cache(
 
     vetores = [vetores_por_hash[hash_] for hash_ in hashes]
     indice = IndiceEmMemoria()
-    indice.adicionar(secoes, vetores)
+    indice.adicionar([entrada.secao for entrada in entradas], vetores)
     repositorio.gravar(
         tuple(
             EntradaCache(hash_texto=hash_, modelo=modelo, vetor=vetor)

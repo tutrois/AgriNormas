@@ -23,7 +23,7 @@ from busca.calibracao import (
     ler_perguntas_validacao,
     pontuar_perguntas,
 )
-from busca.indexacao import construir_indice
+from busca.indexacao import construir_indice, entradas_indexaveis
 from busca.indice_memoria import IndiceEmMemoria
 from busca.provedor_openai import ProvedorEmbeddingOpenAI
 from config import Configuracao, carregar_configuracao
@@ -42,6 +42,10 @@ NUMERO_PERGUNTA_SEM_RESPOSTA = 6
 # Limiar escolhido e registrado no ADR-002 (docs/decisoes/ADR-002-limiar-de-similaridade.md).
 # Constante de propósito: o teste de calibração não depende do valor de `.env`.
 LIMIAR_ADR_002 = 0.60
+# Mesma configuração de `src/composicao.py` (perguntas de FAQ como entrada própria). A linha de
+# base de ADR-002 (55 entradas, sem FAQ) foi medida com False; para reproduzi-la, troque aqui e
+# em `scripts/calibrar_limiar.py`.
+PERGUNTAS_FAQ = True
 
 
 @dataclass(frozen=True)
@@ -74,10 +78,11 @@ def ambiente() -> _Ambiente:
         tamanho_lote=TAMANHO_LOTE,
         timeout_segundos=configuracao.timeout_segundos,
     )
-    indice = construir_indice(secoes, provedor)
+    indice = construir_indice(secoes, provedor, perguntas_faq=PERGUNTAS_FAQ)
+    total_entradas = len(entradas_indexaveis(secoes, perguntas_faq=PERGUNTAS_FAQ))
     perguntas = ler_perguntas_validacao(CAMINHO_PERGUNTAS)
     vetores = provedor.gerar(tuple(pergunta.texto for pergunta in perguntas))
-    pontuacoes = pontuar_perguntas(perguntas, vetores, indice, total_secoes=len(secoes))
+    pontuacoes = pontuar_perguntas(perguntas, vetores, indice, total_secoes=total_entradas)
     return _Ambiente(configuracao, provedor, indice, pontuacoes)
 
 

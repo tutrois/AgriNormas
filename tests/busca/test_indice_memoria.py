@@ -70,6 +70,19 @@ def test_adicionar_listas_vazias_nao_faz_nada() -> None:
     assert indice.buscar((1.0, 0.0), 3) == ()
 
 
+def test_duas_entradas_para_a_mesma_secao_sao_aceitas_e_ambas_aparecem() -> None:
+    # Um FAQ pode ter o texto completo e a pergunta como duas entradas (ver busca/indexacao.py).
+    secao = _secao("faq-1")
+    indice = IndiceEmMemoria()
+
+    indice.adicionar([secao, secao], [(0.0, 1.0), (1.0, 0.0)])
+    resultados = indice.buscar((1.0, 0.0), 2)
+
+    assert [trecho.secao for trecho in resultados] == [secao, secao]
+    assert resultados[0].pontuacao == pytest.approx(1.0)
+    assert resultados[1].pontuacao == pytest.approx(0.0)
+
+
 def test_k_maior_que_o_numero_de_vetores_devolve_todos() -> None:
     indice = IndiceEmMemoria()
     indice.adicionar([_secao("1"), _secao("2")], [(1.0, 0.0), (0.0, 1.0)])

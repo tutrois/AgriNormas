@@ -208,3 +208,85 @@ def test_quantidade_de_vetores_diferente_de_um_levanta_erro_de_busca(
         buscador.buscar(PERGUNTA)
 
     assert str(erro.value) == MENSAGEM_VETOR_PERGUNTA_INVALIDO
+
+
+def _vetor_com_cosseno(cosseno: float) -> Vetor:
+    """Vetor unitário cujo cosseno com a pergunta (1, 0) é `cosseno`."""
+    return (cosseno, math.sqrt(1.0 - cosseno * cosseno))
+
+
+def test_secao_com_duas_entradas_aparece_uma_vez_com_a_maior_pontuacao() -> None:
+    # Cada FAQ tem duas entradas: o texto completo (0.4) e a pergunta (0.7).
+    secao_faq = _secao("faq-1")
+    secao_outra = _secao("2")
+    indice = IndiceEmMemoria()
+    indice.adicionar(
+        [secao_faq, secao_faq, secao_outra],
+        [_vetor_com_cosseno(0.4), _vetor_com_cosseno(0.7), _vetor_com_cosseno(0.9)],
+    )
+    buscador, _ = _buscador(indice, limiar=0.5, top_k=3)
+
+    resultados = buscador.buscar(PERGUNTA)
+
+    assert [trecho.secao for trecho in resultados] == [secao_outra, secao_faq]
+    assert resultados[1].pontuacao == pytest.approx(0.7)
+
+
+def test_pergunta_de_faq_acima_do_limiar_traz_a_secao_mesmo_com_o_texto_abaixo() -> None:
+    secao_faq = _secao("faq-1")
+    indice = IndiceEmMemoria()
+    indice.adicionar(
+        [secao_faq, secao_faq],
+        [_vetor_com_cosseno(0.4), _vetor_com_cosseno(0.7)],
+    )
+    buscador, _ = _buscador(indice, limiar=0.6)
+
+    resultados = buscador.buscar(PERGUNTA)
+
+    assert [trecho.secao for trecho in resultados] == [secao_faq]
+    assert resultados[0].pontuacao == pytest.approx(0.7)
+
+
+def test_limiar_nao_traz_secao_cujas_entradas_estao_todas_abaixo_dele() -> None:
+    secao_faq = _secao("faq-1")
+    indice = IndiceEmMemoria()
+    indice.adicionar(
+        [secao_faq, secao_faq],
+        [_vetor_com_cosseno(0.4), _vetor_com_cosseno(0.5)],
+    )
+    buscador, _ = _buscador(indice, limiar=0.6)
+
+    assert buscador.buscar(PERGUNTA) == ()
+
+
+def test_top_k_conta_secoes_distintas_e_nao_entradas() -> None:
+    # Sem deduplicar, as duas primeiras posições seriam da mesma seção e o resultado teria só ela.
+    secao_a, secao_b, secao_c = _secao("faq-1"), _secao("2"), _secao("3")
+    indice = IndiceEmMemoria()
+    indice.adicionar(
+        [secao_a, secao_a, secao_b, secao_c],
+        [
+            _vetor_com_cosseno(0.9),
+            _vetor_com_cosseno(0.8),
+            _vetor_com_cosseno(0.7),
+            _vetor_com_cosseno(0.6),
+        ],
+    )
+    buscador, _ = _buscador(indice, limiar=0.0, top_k=2)
+
+    resultados = buscador.buscar(PERGUNTA)
+
+    assert [trecho.secao for trecho in resultados] == [secao_a, secao_b]
+
+
+def test_top_k_com_muitas_secoes_repetidas_ainda_devolve_top_k_distintas() -> None:
+    secoes = [_secao(f"faq-{numero}") for numero in range(1, 4)]
+    indice = IndiceEmMemoria()
+    entradas = [secao for secao in secoes for _ in range(2)]
+    vetores = [_vetor_com_cosseno(0.9 - posicao * 0.05) for posicao in range(len(entradas))]
+    indice.adicionar(entradas, vetores)
+    buscador, _ = _buscador(indice, limiar=0.0, top_k=3)
+
+    resultados = buscador.buscar(PERGUNTA)
+
+    assert [trecho.secao for trecho in resultados] == secoes
