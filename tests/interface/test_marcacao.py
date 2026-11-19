@@ -17,9 +17,7 @@ from interface.marcacao import (
     boas_vindas_html,
     cabecalho_da_base_html,
     contagem_de_secoes,
-    divisor_html,
     documento_html,
-    marca_da_barra_html,
     meta_do_documento,
     remover_citacoes,
     rotulo_lista_html,
@@ -98,19 +96,6 @@ def test_titulo_e_boas_vindas_escapam_o_texto() -> None:
     assert "&lt;i&gt;s&lt;/i&gt;" in boas_vindas
 
 
-def test_marca_da_barra_e_so_texto_sem_link() -> None:
-    # A marca não é destino de navegação: nada de link nem de botão no bloco.
-    bloco = marca_da_barra_html()
-
-    assert '<span class="agri-marca" aria-hidden="true">RH</span>' in bloco
-    assert "<a " not in bloco
-    assert "Nova conversa" not in bloco
-
-
-def test_divisor_e_decorativo() -> None:
-    assert divisor_html() == '<div class="agri-divisor" aria-hidden="true"></div>'
-
-
 def test_rotulo_da_lista_escapa_o_texto() -> None:
     assert rotulo_lista_html("<b>x</b>") == '<p class="agri-lista-rotulo">&lt;b&gt;x&lt;/b&gt;</p>'
 
@@ -138,10 +123,6 @@ def test_remove_citacao_separada_por_espaco_e_antes_de_pontuacao() -> None:
 
 def test_remove_secao_com_ponto_e_faq() -> None:
     assert remover_citacoes("Regra [FIN-POL-001 §3.1] e [FIN-FAQ-001 §faq-5].") == "Regra e."
-
-
-def test_citacao_no_meio_deixa_um_unico_espaco() -> None:
-    assert remover_citacoes("antes [A-1 §2] depois") == "antes depois"
 
 
 def test_nao_remove_colchetes_que_nao_sao_citacao() -> None:

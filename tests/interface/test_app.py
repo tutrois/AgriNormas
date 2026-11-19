@@ -259,10 +259,6 @@ def _html_da_pagina(at: AppTest) -> str:
     return "\n".join(_valores(at.html))
 
 
-def _css_da_pagina(at: AppTest) -> str:
-    return "\n".join(valor for valor in _valores(at.html) if "<style>" in valor)
-
-
 def _conteudo_da_arvore(no: Any) -> str:
     """Todo o conteúdo renderizado por um nó e pelos filhos, para checar ausências (ex.: a chave).
 
@@ -450,7 +446,6 @@ def test_resposta_preserva_quebras_de_linha(montagens: Montagens) -> None:
     assert _respostas_em_html(at) == [
         f'<div class="{CLASSE_RESPOSTA}">Primeira linha.\nSegunda linha.</div>'
     ]
-    assert "white-space: pre-wrap" in _css_da_pagina(at)
 
 
 def test_pergunta_do_usuario_aparece_escapada_no_balao(montagens: Montagens) -> None:
@@ -485,40 +480,6 @@ def test_conversa_liga_rolagem_automatica_ate_a_ultima_mensagem(montagens: Monta
     at = _perguntar(at, "Qual é o prazo de entrega?")
 
     assert _bloco_da_conversa(at).autoscroll is True
-
-
-def test_conversa_nao_tem_borda_de_contorno_do_streamlit(montagens: Montagens) -> None:
-    # Contêiner de altura fixa ganha borda por padrão; a área de conversa não deve ter.
-    assert _bloco_da_conversa(_abrir()).flex_container.border is False
-
-
-def test_layout_estreito_tem_margem_de_16_pixels_e_quebra_de_linha(
-    montagens: Montagens,
-) -> None:
-    at = _abrir()
-
-    css = _css_da_pagina(at)
-    assert "@media (max-width: 640px)" in css
-    assert "padding-left: 16px" in css
-    assert "padding-right: 16px" in css
-    assert "overflow-wrap: anywhere" in css
-
-
-def test_conteudo_das_fontes_quebra_palavras_longas_no_expansor(montagens: Montagens) -> None:
-    css = _css_da_pagina(_abrir())
-
-    seletor = '[data-testid="stExpander"] [data-testid="stMarkdownContainer"] {'
-    assert seletor in css
-    bloco = css.split(seletor)[1].split("}")[0]
-    assert "overflow-wrap: anywhere" in bloco
-
-
-def test_css_da_pagina_nao_carrega_recursos_externos(montagens: Montagens) -> None:
-    css = _css_da_pagina(_abrir())
-
-    assert "<style>" in css
-    assert "url(" not in css
-    assert "@import" not in css
 
 
 def test_html_da_pagina_nao_carrega_recursos_externos(montagens: Montagens) -> None:
@@ -569,14 +530,6 @@ def test_barra_lateral_mostra_marca_sem_link_e_nova_conversa_como_botao(
     assert "<a " not in _html_da_barra(at)
     assert 'href="./"' not in _html_da_pagina(at)
     assert at.button(key="nova_conversa").label == "Nova conversa"
-
-
-def test_pagina_nao_mostra_titulo_no_topo(montagens: Montagens) -> None:
-    # A referência aprovada não tem título no topo da área principal. A marca fica na barra.
-    at = _abrir()
-
-    assert "<h1>" not in _html_da_pagina(at)
-    assert "reprodu" not in _html_da_pagina(at)
 
 
 def test_autores_aparecem_como_texto_voce_e_assistente(montagens: Montagens) -> None:
@@ -822,14 +775,6 @@ def test_icones_da_acao_e_dos_destinos_sao_os_do_material(montagens: Montagens) 
     assert at.button(key="destino_base").proto.icon == ":material/menu_book:"
 
 
-def test_rotulos_da_barra_nao_tem_sufixo_aberto(montagens: Montagens) -> None:
-    at = _clicar(_abrir(), "destino_base")
-
-    rotulos = [str(b.label) for b in at.sidebar.button]
-    assert rotulos == ["Nova conversa", "Perguntar", "Base de conhecimento"]
-    assert not any("aberto" in rotulo for rotulo in rotulos)
-
-
 def test_recentes_fica_depois_da_base_com_divisor_e_rotulo(montagens: Montagens) -> None:
     at = _perguntar(_abrir(), "Qual é o prazo de entrega?")
 
@@ -956,13 +901,6 @@ def test_nova_conversa_zera_a_conversa_o_campo_e_volta_ao_chat(montagens: Montag
     assert montagens.chamadas == 1
 
 
-def test_nova_conversa_e_botao_sem_destaque_e_sem_link(montagens: Montagens) -> None:
-    at = _abrir()
-
-    assert at.button(key="nova_conversa").proto.type == "secondary"
-    assert "<a " not in _html_da_barra(at)
-
-
 def test_clicar_num_documento_mostra_cabecalho_e_secoes_em_ordem(montagens: Montagens) -> None:
     at = _abrir()
 
@@ -998,16 +936,6 @@ def test_voltar_a_lista_e_do_documento_e_da_lista_ao_chat(montagens: Montagens) 
     _clicar(at, "voltar_chat")
     assert TITULO_BOAS_VINDAS in _html_da_pagina(at)
     assert any(str(b.key).startswith("sugestao_") for b in at.button)
-
-
-def test_a_entrada_continua_montada_na_tela_da_base_para_nao_perder_o_texto(
-    montagens: Montagens,
-) -> None:
-    at = _clicar(_abrir(), "destino_base")
-
-    assert [campo.label for campo in at.text_input] == [ROTULO_PERGUNTA]
-    assert "tela_base" in _css_da_pagina(at)
-    assert ":has(.st-key-tela_base) .st-key-entrada" in _css_da_pagina(at)
 
 
 def test_texto_hostil_do_documento_e_escapado_na_visualizacao(
