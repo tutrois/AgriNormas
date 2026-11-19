@@ -68,6 +68,8 @@ AJUDA_PERGUNTA: Final[str] = (
 )
 CHAVE_TURNOS: Final[str] = "turnos_conversa"
 CHAVE_SUGESTAO: Final[str] = "pergunta_sugerida"
+# Altura passada ao Streamlit só para ligar a rolagem automática. A altura real é do CSS.
+ALTURA_CONVERSA_PARA_ROLAGEM: Final[int] = 400
 ROTULO_SUGESTOES: Final[str] = "Perguntas frequentes"
 TITULO_PAGINA_LEITOR: Final[str] = "Perguntas sobre as normas"
 ROTULO_RECENTES: Final[str] = "Recentes"
@@ -262,14 +264,16 @@ def main() -> None:
     # `autoscroll` faz a área rolar até a última mensagem a cada envio. Com altura fixa, o
     # Streamlit só liga essa rolagem; a altura que vale é a do CSS (`estilo.py`), que ocupa o
     # espaço que sobra. Por isso o valor de `height` aqui é só o que liga a rolagem.
-    area_conversa = st.container(key="conversa", height=ALTURA_CONVERSA_PARA_ROLAGEM, autoscroll=True)
+    area_conversa = st.container(
+        key="conversa", height=ALTURA_CONVERSA_PARA_ROLAGEM, autoscroll=True, border=False
+    )
     with st.sidebar:
         st.html(barra_lateral_html())
         area_lista = st.container(key="lista_conversas")
     # A entrada (campo e ajuda) é um bloco só, que fica fixo na base depois da primeira pergunta.
     with st.container(key="entrada"):
         with (
-            st.form("formulario_pergunta", border=False),
+            st.form("formulario_pergunta", border=False, clear_on_submit=True),
             st.container(
                 key="composer",
                 horizontal=True,

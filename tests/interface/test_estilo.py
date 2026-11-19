@@ -215,6 +215,14 @@ def test_botao_de_recolher_da_barra_fica_sempre_visivel() -> None:
     assert '[data-testid="stSidebarCollapseButton"] button' in CSS_PAGINA
 
 
+def test_altura_da_conversa_vem_do_css_e_nao_da_altura_fixa_do_streamlit() -> None:
+    # O autoscroll exige altura fixa no Streamlit; o CSS anula essa altura e a área ocupa o espaço
+    # que sobra. A rolagem continua em `overflow-y: auto`.
+    assert "height: auto !important;" in CSS_PAGINA
+    assert "max-height: none !important;" in CSS_PAGINA
+    assert "overflow-y: auto;" in CSS_PAGINA
+
+
 def test_campo_fica_na_base_so_depois_da_primeira_pergunta() -> None:
     # Só com conversa (balões) o wrapper da entrada vai para a base e fica preso ao fim.
     assert ".st-key-conversa .agri-linha" in CSS_PAGINA

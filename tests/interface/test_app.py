@@ -386,6 +386,32 @@ def test_pergunta_do_usuario_aparece_escapada_no_balao(montagens: Montagens) -> 
     assert "<img" not in _html_da_pagina(at)
 
 
+def _bloco_da_conversa(at: AppTest) -> Any:
+    """Bloco da área de conversa (chave "conversa"), achado pelo id que o Streamlit gera."""
+    protos = [getattr(no, "proto", None) for no in at.main.children.values()]
+    achados = [
+        p for p in protos if p is not None and str(getattr(p, "id", "")).endswith("-conversa")
+    ]
+    assert len(achados) == 1
+    return achados[0]
+
+
+def test_conversa_liga_rolagem_automatica_ate_a_ultima_mensagem(montagens: Montagens) -> None:
+    # A área rola sozinha a cada envio (autoscroll do Streamlit). Sem isso, a última resposta
+    # fica abaixo da área visível. A altura real vem do CSS, não deste bloco.
+    at = _abrir()
+    assert _bloco_da_conversa(at).autoscroll is True
+
+    at = _perguntar(at, "Qual é o prazo de entrega?")
+
+    assert _bloco_da_conversa(at).autoscroll is True
+
+
+def test_conversa_nao_tem_borda_de_contorno_do_streamlit(montagens: Montagens) -> None:
+    # Contêiner de altura fixa ganha borda por padrão; a área de conversa não deve ter.
+    assert _bloco_da_conversa(_abrir()).flex_container.border is False
+
+
 def test_layout_estreito_tem_margem_de_16_pixels_e_quebra_de_linha(
     montagens: Montagens,
 ) -> None:
