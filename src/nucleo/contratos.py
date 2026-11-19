@@ -5,7 +5,7 @@ Regras deste módulo:
 - O núcleo depende só destes contratos (Dependency Inversion).
 - Toda implementação deve respeitar o contrato, inclusive em casos vazios e erros
   (Liskov). Retornos vazios são tuplas vazias, nunca `None`.
-- Mudança de contrato exige ADR em `docs/decisoes/`.
+- Mudança de contrato exige um registro de decisão (ADR) no projeto.
 """
 
 from __future__ import annotations
